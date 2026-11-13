@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wayfarer"
+version = "0.1.0"
+description = "Voice-controlled payments for AI agents on NEAR, bounded by an on-chain spending policy (testnet prototype)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = []  # standard library only
+
+[project.optional-dependencies]
+dev = ["ruff>=0.6", "mypy>=1.10"]
+
+[project.scripts]
+wayfarer = "wayfarer.cli:main"
+wayfarer-bot = "wayfarer.telegram.bot:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "N", "C4", "PT", "RUF", "S", "T20"]
+ignore = ["S101", "E501"]  # S101: asserts in tests; E501: the formatter owns line length
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S105", "S106", "S311", "T20", "PT009", "PT027"]  # unittest is the chosen framework
+"scripts/**" = ["T20", "S603", "S607"]
+"src/wayfarer/cli.py" = ["T20"]
+"src/wayfarer/crypto/ed25519.py" = ["N806"]  # RFC 8032 notation (P, L, B, A, R, S)
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src"
+packages = ["wayfarer"]

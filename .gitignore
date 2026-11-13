@@ -1,0 +1,36 @@
+.DS_Store
+node_modules/
+*.keystore
+*.jks
+.env
+docs/research/harness/results/
+build/
+.gradle/
+*.iml
+.idea/
+local.properties
+
+# Firebase project configuration and keys: never committed
+app/google-services.json
+google-services.json
+*firebase-adminsdk*.json
+
+# local pack tryout store (packtool run)
+.devstore.json
+
+
+# local only
+website/.next/
+website/out/
+*.apk
+__pycache__/
+
+# Wayfarer local state (receipt ledger with salts, spend meter)
+.wayfarer/
+__pycache__/
+.mypy_cache/
+.ruff_cache/
+.venv-tools/
+.kotlin/
+tools/pqref/target/
+contracts/wayfarer-vault/target/

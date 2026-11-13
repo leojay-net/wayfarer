@@ -1,0 +1,15 @@
+[package]
+name = "pqref"
+version = "0.1.0"
+edition = "2021"
+description = "Reference ML-DSA-65 tool built on nearcore's own near-crypto, used to cross-check the Python signer and for testnet spikes"
+license = "MIT"
+
+[dependencies]
+near-crypto = "0.38"
+near-primitives = "0.38"
+borsh = "1"
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+serde_json = "1"
+hex = "0.4"
+anyhow = "1"

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- AID F0574159464152 = 0xF0 + "WAYFAR". Must equal Apdu.AID in wayfarer-tap. -->
+<host-apdu-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/card_description"
+    android:requireDeviceUnlock="true">
+    <aid-group android:category="other" android:description="@string/card_description">
+        <aid-filter android:name="F0574159464152" />
+    </aid-group>
+</host-apdu-service>

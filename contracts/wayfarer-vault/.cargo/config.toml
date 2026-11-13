@@ -1,0 +1,3 @@
+# near-sdk >= 5.2x selects its on-chain host calls only with `--cfg near`. Without it a panic becomes a bare `unreachable` trap with no message.
+[target.wasm32-unknown-unknown]
+rustflags = ["--cfg", "near"]

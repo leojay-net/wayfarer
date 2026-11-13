@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wayfarer receipt verifier (prototype, testnet)</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 46rem; margin: 2rem auto; padding: 0 1rem; color: #1b1b1b; }
+  textarea { width: 100%; height: 11rem; font: 12px monospace; }
+  button { font: inherit; padding: .5rem 1rem; margin-right: .5rem; }
+  li { margin: .2rem 0; } .ok::marker { content: "PASS  "; color: #0a6b2d; } .bad::marker { content: "FAIL  "; color: #b00020; }
+  .note { background: #f4f1e8; padding: .6rem .8rem; border-radius: 6px; font-size: 14px; }
+</style>
+</head>
+<body>
+<h1>Wayfarer receipt verifier</h1>
+<p class="note">Prototype. Testnet receipts only. Unaudited. Everything runs in this page: the ML-DSA-65 signatures are
+checked by JavaScript in your browser, nothing is uploaded. The "against the chain" button asks the public NEAR testnet
+RPC for the transaction and the owner's keys. A receipt proves the request, the mandate and the on-chain events agree;
+it does not prove who pressed the button or that goods were delivered.</p>
+<p>Paste a receipt (<code>receipt.json</code>) or choose the file:</p>
+<input type="file" id="file" accept=".json,application/json">
+<textarea id="box" spellcheck="false" aria-label="Receipt JSON"></textarea>
+<p><button id="offline">Check offline</button><button id="online">Check against the chain</button></p>
+<p id="summary" role="status"></p>
+<ul id="results"></ul>
+<script type="module">
+import { verifyReceiptOffline, verifyReceiptOnline } from "./receipt.js";
+const box = document.getElementById("box");
+const results = document.getElementById("results");
+const summary = document.getElementById("summary");
+document.getElementById("file").addEventListener("change", async (e) => { box.value = await e.target.files[0].text(); });
+function show(checks) {
+  results.replaceChildren(...checks.map((c) => {
+    const li = document.createElement("li");
+    li.className = c.ok ? "ok" : "bad";
+    li.textContent = c.name + (c.detail && !c.ok ? " (" + c.detail + ")" : "");
+    return li;
+  }));
+  const bad = checks.filter((c) => !c.ok).length;
+  summary.textContent = bad === 0 ? `All ${checks.length} checks passed.` : `${bad} of ${checks.length} checks FAILED.`;
+}
+function parse() {
+  try { return JSON.parse(box.value); } catch { summary.textContent = "That is not valid JSON."; results.replaceChildren(); return null; }
+}
+document.getElementById("offline").onclick = async () => { const r = parse(); if (r) { summary.textContent = "Checking..."; show(await verifyReceiptOffline(r)); } };
+document.getElementById("online").onclick = async () => {
+  const r = parse(); if (!r) return;
+  summary.textContent = "Checking...";
+  show([...(await verifyReceiptOffline(r)), ...(await verifyReceiptOnline(r))]);
+};
+</script>
+</body>
+</html>
