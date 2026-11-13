@@ -351,7 +351,7 @@ class MainActivity : ComponentActivity() {
     private fun Field(label: String, value: String, onChange: (String) -> Unit) {
         Note(label)
         Box(Modifier.fillMaxWidth().background(Color(0xFFEFEFEF)).padding(10.dp)) {
-            BasicTextField(value, onChange, textStyle = TextStyle(color = Ink, fontSize = 16.sp), singleLine = true)
+            BasicTextField(value, onChange, modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(color = Ink, fontSize = 16.sp), singleLine = true)
         }
     }
 }
