@@ -79,7 +79,7 @@ python3 scripts/settle_cheque.py accepted.json --suffix 9bda7c --save out/     #
 Measured on 13 Nov 2026 on the author's computer: Python 215 tests, Kotlin 18 tests, Node 6 tests, contract 40 + 4 + 2 tests, `mypy --strict` and `ruff` clean. Signing one cheque in pure Python took about 0.1 s on that laptop; **no phone measurement exists**.
 
 ## New (since 1 Nov) vs inherited
-- **Everything in this repository was written for this hackathon** (since 1 Nov): the Python package `src/wayfarer/`, `tests/`, `contracts/wayfarer-vault/`, `tools/pqref/`, `verifier/`, `wayfarer-tap/`, `wayfarer-app/`, `scripts/`, `testdata/` and `docs/`. The git history begins with an earlier baseline that also contained an unrelated assistant app; that code was removed from the tree and nothing here depends on it.
+- **Everything in this repository was written for this hackathon** (since 1 Nov): the Python package `src/wayfarer/`, `tests/`, `contracts/wayfarer-vault/`, `tools/pqref/`, `verifier/`, `wayfarer-tap/`, `wayfarer-app/`, `scripts/`, `testdata/` and `docs/`.
 - **Earlier milestone, still here:** the voice bot. A Telegram voice note or typed instruction is parsed by NEAR AI Cloud, read back, and after **Confirm** pays through the v1 vault `pay_direct` (`src/wayfarer/telegram/`, `intent.py`, `receipts.py`, `attestation.py`, `cost.py`; evidence in [docs/TESTNET-DEPLOYMENT.md](docs/TESTNET-DEPLOYMENT.md)). Its limits stay as documented there: on 12 Nov NEAR AI Cloud's Whisper endpoint hung during our tests, no human completed a voice-note -> Confirm round trip, and the 60-case intent set (`testdata/intents.jsonl`, self-authored) has not been run. Run it yourself with `scripts/e2e_suite.py --stage eval`.
 
 ## Repo map
