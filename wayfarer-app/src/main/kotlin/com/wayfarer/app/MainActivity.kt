@@ -249,7 +249,7 @@ class MainActivity : ComponentActivity() {
                 val wallet = BuyerWallet(setting("vault", ""), SeedSigner(seed), { true }, mapOf("near" to limit), System::currentTimeMillis)
                 envelope = wallet.pay(req)
                 seed.fill(0)
-                message = "Approved and signed. Hold the phones together again to send it, or show the code."
+                message = ""
             } catch (e: TapException) {
                 message = e.message ?: "Could not sign."
             } catch (e: Exception) {
