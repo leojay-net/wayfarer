@@ -8,20 +8,21 @@ import android.os.Bundle
 import android.os.CancellationSignal
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.Image
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.BasicText
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,13 +30,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.wayfarer.tap.AcceptedCheque
 import com.wayfarer.tap.ApduClient
 import com.wayfarer.tap.BuyerWallet
@@ -52,9 +55,6 @@ import com.wayfarer.tap.toHex
 import java.math.BigDecimal
 import java.math.BigInteger
 
-private val Ink = Color(0xFF1B1B1B)
-private val Accent = Color(0xFF0B5FFF)
-
 /**
  * Wayfarer Tap, prototype. TESTNET ONLY. Not audited. Not yet run on two real phones: NFC throughput and the QR
  * scan loop are untested on hardware (the protocol logic itself is unit-tested in wayfarer-tap).
@@ -66,6 +66,7 @@ class MainActivity : ComponentActivity() {
     // Shared UI state
     private var role by mutableStateOf<String?>(null)
     private var message by mutableStateOf("")
+    private var keyReady by mutableStateOf(false)
 
     // Merchant
     private var terminal: MerchantTerminal? = null
@@ -88,8 +89,31 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store = SeedStore(this)
+        keyReady = store.exists
         nfc = NfcReader(this) { client, _ -> onPhoneTouched(client) }
         setContent { Screen() }
+        handleDemoIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleDemoIntent(intent)
+    }
+
+    /**
+     * Debug builds only: `adb shell am start ... --es demo_request_hex <hex>` hands the buyer a payment request as if it
+     * had just been scanned, so the buyer screens can be driven on a single emulator. Release builds ignore it.
+     */
+    private fun handleDemoIntent(intent: Intent?) {
+        val debuggable = applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
+        val hex = intent?.getStringExtra("demo_request_hex") ?: return
+        if (!debuggable) return
+        try {
+            role = "buyer"
+            review(PaymentRequest.decode(hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()))
+        } catch (e: Exception) {
+            message = "Could not read the demo request."
+        }
     }
 
     override fun onResume() {
@@ -148,7 +172,7 @@ class MainActivity : ComponentActivity() {
                     CommitResult(false, e.message ?: "Refused.")
                 }
             }
-            message = "Waiting for the buyer. Hold their phone to the back of this one, or let them scan the code."
+            message = ""
         } catch (e: TapException) {
             message = e.message ?: "Could not create the request."
         } catch (e: ArithmeticException) {
@@ -205,7 +229,7 @@ class MainActivity : ComponentActivity() {
         incoming = got
         envelope = null
         sentResult = null
-        message = "Check the amount, then approve."
+        message = ""
     }
 
     private fun scanRequest() = scanOne(this, { text ->
@@ -236,23 +260,91 @@ class MainActivity : ComponentActivity() {
 
     // ------------------------------------------------------------------------------------------------------ UI
 
+    private fun tone(text: String) = when {
+        text.startsWith("Not confirmed") || text.startsWith("Refused") || text.startsWith("Could not") ||
+            text.startsWith("Enter") || text.startsWith("Set a screen") || text.contains("moved apart") -> Tone.Bad
+        else -> Tone.Neutral
+    }
+
     @Composable
     private fun Screen() {
-        Column(Modifier.fillMaxSize().background(Color.White).systemBarsPadding().verticalScroll(rememberScrollState()).padding(16.dp), Arrangement.spacedBy(10.dp)) {
-            Title("Wayfarer Tap")
-            Note("PROTOTYPE. TESTNET ONLY. UNAUDITED. Not tested on real phones yet. Rates are typed in by hand (DEMO), not a market feed.")
-            when (role) {
-                null -> {
-                    Btn("I am the merchant") { role = "merchant"; nfc?.stop() }
-                    Btn("I am the buyer") { role = "buyer"; nfc?.start() }
+        Page {
+            Column(Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 22.dp)) {
+                Box(Modifier.weight(1f)) {
+                    when (role) {
+                        null -> HomeScreen()
+                        "merchant" -> MerchantScreen()
+                        else -> BuyerScreen()
+                    }
                 }
-                "merchant" -> MerchantScreen()
-                else -> BuyerScreen()
+                if (message.isNotEmpty()) {
+                    Banner(message, tone(message)) { message = "" }
+                    Spacer(Modifier.height(10.dp))
+                }
+                TestnetStrip()
+                Spacer(Modifier.height(10.dp))
             }
-            if (message.isNotEmpty()) BasicText(message, style = TextStyle(color = Accent, fontSize = 15.sp))
-            if (role != null) Btn("Back") { role = null; message = ""; nfc?.stop() }
         }
     }
+
+    private fun leave() { role = null; message = ""; request = null; accepted = null; incoming = null; envelope = null; sentResult = null; nfc?.stop() }
+
+    @Composable
+    private fun HomeScreen() {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), Arrangement.spacedBy(0.dp)) {
+            Spacer(Modifier.height(24.dp))
+            Wordmark()
+            Spacer(Modifier.height(56.dp))
+            Eyebrow("Quantum-safe tap to pay", Wf.Mint)
+            Spacer(Modifier.height(14.dp))
+            T("Spend naira.\nHold NEAR.", 44, FontWeight.Light, spacing = -1.4, lineHeight = 48)
+            Spacer(Modifier.height(18.dp))
+            T(
+                "Approve a naira price with your fingerprint. A bounded, post-quantum signed cheque settles from your vault on NEAR.",
+                16, color = Wf.Dim, lineHeight = 24,
+            )
+            Spacer(Modifier.height(40.dp))
+            RoleCard("Pay", "Approve a price and settle from your vault", "Buyer") { role = "buyer"; nfc?.start() }
+            Spacer(Modifier.height(12.dp))
+            RoleCard("Accept payments", "Charge in naira, get a signed cheque", "Merchant") { role = "merchant"; nfc?.stop() }
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+
+    @Composable
+    private fun RoleCard(title: String, subtitle: String, tag: String, onClick: () -> Unit) {
+        val source = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+        Card(
+            Modifier.androidxClickable(source, onClick),
+            pad = 22.dp,
+        ) {
+            Eyebrow(tag)
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    T(title, 24, FontWeight.Medium, spacing = -0.5)
+                    Spacer(Modifier.height(4.dp))
+                    T(subtitle, 14, color = Wf.Dim)
+                }
+                Chevron()
+            }
+        }
+    }
+
+    private fun Modifier.androidxClickable(source: androidx.compose.foundation.interaction.MutableInteractionSource, onClick: () -> Unit) =
+        this.then(Modifier.clickable(interactionSource = source, indication = null, onClick = onClick))
+
+    @Composable
+    private fun Chevron() {
+        androidx.compose.foundation.Canvas(Modifier.size(18.dp)) {
+            val p = androidx.compose.ui.graphics.Path().apply {
+                moveTo(size.width * 0.32f, size.height * 0.1f); lineTo(size.width * 0.72f, size.height * 0.5f); lineTo(size.width * 0.32f, size.height * 0.9f)
+            }
+            drawPath(p, Wf.Dim, style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+        }
+    }
+
+    // ---- merchant
 
     @Composable
     private fun MerchantScreen() {
@@ -260,58 +352,255 @@ class MainActivity : ComponentActivity() {
         var name by remember { mutableStateOf(setting("merchant_name", "")) }
         var rate by remember { mutableStateOf(setting("rate", "5000")) }
         var amount by remember { mutableStateOf("") }
-        Title("Merchant")
-        Field("Your NEAR account (e.g. shop.testnet)", account) { account = it; save("merchant_account", it) }
-        Field("Shop name", name) { name = it; save("merchant_name", it) }
-        Field("DEMO rate: naira per 1 NEAR", rate) { rate = it; save("rate", it) }
-        Field("Amount in naira", amount) { amount = it }
-        Btn("Create payment request") { startSale(amount) }
-        request?.let { r ->
-            Title(r.fiatDisplay() + " = " + com.wayfarer.tap.assetText(r.tokenId, r.assetAmount))
-            Note("Price locked for 60 seconds at a DEMO rate of ${r.rate}.")
-            FrameImages(encodeFrames(r.message(), r.nonce.copyOf(4)))
+        var settings by remember { mutableStateOf(account.isEmpty()) }
+        val req = request
+        val got = accepted
+        Column(Modifier.fillMaxSize()) {
+            TopBar(
+                if (got != null) "Accepted" else if (req != null) "Waiting for buyer" else "Charge",
+                onBack = { if (req != null && got == null) { request = null; message = "" } else leave() },
+            ) {
+                if (req == null) TextAction(if (settings) "Done" else "Setup", Wf.Mint) { settings = !settings }
+            }
+            when {
+                got != null -> AcceptedPanel(got)
+                req != null -> RequestPanel(req)
+                settings -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), Arrangement.spacedBy(18.dp)) {
+                    Spacer(Modifier.height(8.dp))
+                    T("Terminal", 28, FontWeight.Light, spacing = -0.6)
+                    T("Where the money lands, and the demo exchange rate. Nothing here is a live market feed.", 14, color = Wf.Dim, lineHeight = 20)
+                    Field("Your NEAR account", account, mono = true) { account = it; save("merchant_account", it) }
+                    Field("Shop name", name) { name = it; save("merchant_name", it) }
+                    Field("Demo rate (naira per 1 NEAR)", rate, keyboard = KeyboardType.Decimal) { rate = it; save("rate", it) }
+                }
+                else -> Column(Modifier.weight(1f)) {
+                    Spacer(Modifier.height(4.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                        Pill(name.ifEmpty { "Your shop" }, Tone.Neutral)
+                    }
+                    Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Amount("₦", groupEntry(amount), 60, dim = amount.isEmpty())
+                            Spacer(Modifier.height(10.dp))
+                            T(nearHint(amount, rate), 14, color = Wf.Dim)
+                        }
+                    }
+                    Keypad { key -> amount = editAmount(amount, key) }
+                    Spacer(Modifier.height(14.dp))
+                    PrimaryButton("Charge", enabled = amount.isNotEmpty() && amount != ".") { startSale(amount) }
+                    Spacer(Modifier.height(14.dp))
+                }
+            }
         }
-        accepted?.let { a ->
-            Title("ACCEPTED, PENDING SETTLEMENT")
-            Note("Not paid yet. The signature checks out offline, but the payment can still fail (no funds, key revoked, expired). It is final only after it settles on-chain.")
-            Btn("Share the accepted cheque for settlement") { shareAccepted(a) }
-        }
-        if (request != null && accepted == null) Btn("Scan the buyer's cheque code (QR fallback)") { scanChequeFrame() }
     }
+
+    @Composable
+    private fun RequestPanel(r: PaymentRequest) {
+        var now by remember { mutableStateOf(System.currentTimeMillis()) }
+        LaunchedEffect(r) { while (true) { now = System.currentTimeMillis(); kotlinx.coroutines.delay(500) } }
+        val left = ((r.quoteExpiresMs - now) / 1000).coerceAtLeast(0)
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
+            Spacer(Modifier.height(4.dp))
+            Amount(symbolOf(r.fiatCurrency), figureOf(r), 54)
+            Spacer(Modifier.height(8.dp))
+            T("= " + nearText(r), 16, color = Wf.Dim)
+            Spacer(Modifier.height(14.dp))
+            Pill(if (left > 0) "Price locked  ${left / 60}:${(left % 60).toString().padStart(2, '0')}" else "Price expired", if (left > 0) Tone.Live else Tone.Warn)
+            Spacer(Modifier.height(22.dp))
+            val frames = remember(r) { encodeFrames(r.message(), r.nonce.copyOf(4)) }
+            Frames(frames) { img, i -> QrCard(img, if (frames.size > 1) "Frame ${i + 1} of ${frames.size}. Keep it in view until the buyer has scanned all." else "Buyer: scan this, or hold phones together.") }
+            Spacer(Modifier.height(20.dp))
+            Card(pad = 4.dp) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    PulseDot()
+                    Column(Modifier.weight(1f)) {
+                        T("Waiting for the buyer", 15, FontWeight.Medium)
+                        T("Hold their phone to the back of this one, or let them scan the code.", 13, color = Wf.Dim, lineHeight = 18)
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            SecondaryButton("Scan the buyer's cheque code") { scanChequeFrame() }
+            Spacer(Modifier.height(14.dp))
+        }
+    }
+
+    @Composable
+    private fun AcceptedPanel(a: AcceptedCheque) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
+            Spacer(Modifier.height(20.dp))
+            SuccessMark()
+            Spacer(Modifier.height(22.dp))
+            T("Cheque accepted", 30, FontWeight.Light, spacing = -0.7)
+            Spacer(Modifier.height(10.dp))
+            Pill("Pending settlement", Tone.Warn)
+            Spacer(Modifier.height(24.dp))
+            Card(pad = 8.dp) {
+                Column(Modifier.padding(horizontal = 12.dp)) {
+                    DetailRow("Amount", figureWithSymbol(a.request))
+                    Hairline()
+                    DetailRow("In NEAR", nearText(a.request))
+                    Hairline()
+                    DetailRow("From vault", a.cheque.vault, mono = true)
+                    Hairline()
+                    DetailRow("Signature", "ML-DSA-65 verified", mono = false)
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            T(
+                "Not paid yet. The signature checks out offline, but the payment can still fail: no funds, key revoked or expired. It is final only after it settles on-chain.",
+                13, color = Wf.Dim, lineHeight = 19,
+            )
+            Spacer(Modifier.height(22.dp))
+            PrimaryButton("Share cheque for settlement") { shareAccepted(a) }
+            Spacer(Modifier.height(10.dp))
+            SecondaryButton("New sale") { request = null; accepted = null; message = "" }
+            Spacer(Modifier.height(14.dp))
+        }
+    }
+
+    // ---- buyer
 
     @Composable
     private fun BuyerScreen() {
         var vault by remember { mutableStateOf(setting("vault", "")) }
         var limit by remember { mutableStateOf(setting("tap_limit_near", "0.5")) }
-        Title("Buyer")
-        Field("Your vault account (e.g. my-vault.testnet)", vault) { vault = it; save("vault", it) }
-        Field("Tap limit in NEAR", limit) { limit = it; save("tap_limit_near", it) }
-        if (!store.exists) {
-            Btn("Create my payment key") { authenticate("Create your payment key") { store.createIfMissing(); message = "Key created. Share its public key with the vault owner to register it." } }
-        } else {
-            Btn("Share my public key (for the vault owner)") { sharePublicKey() }
-        }
-        if (nfc?.available == false) Note("NFC is off or missing; use the QR option.")
+        var settings by remember { mutableStateOf(vault.isEmpty()) }
         val req = incoming
-        if (req == null) {
-            Note("Hold this phone to the back of the merchant's phone, or scan their code.")
-            Btn("Scan the merchant's code (QR)") { scanRequest() }
-        } else {
-            Title("Pay " + req.fiatDisplay() + " to " + req.merchantName)
-            Note("= ${com.wayfarer.tap.assetText(req.tokenId, req.assetAmount)} from your vault. Merchant account: ${req.merchantAccount}")
-            val env = envelope
-            if (env == null) {
-                Btn("Approve with fingerprint or PIN") { approve(req) }
-                Btn("Cancel") { incoming = null; message = "" }
-            } else if (sentResult == null) {
-                Note("Signed. NOT SENT YET. Hold the phones together again, or let the merchant scan this:")
-                FrameImages(encodeFrames(env.encode(), req.nonce.copyOf(4)))
+        val env = envelope
+        val sent = sentResult
+        Column(Modifier.fillMaxSize()) {
+            TopBar(
+                when {
+                    sent?.accepted == true -> "Sent"
+                    env != null -> "Signed"
+                    req != null -> "Review"
+                    else -> "Pay"
+                },
+                onBack = { if (req != null && sent == null) { incoming = null; envelope = null; message = "" } else leave() },
+            ) { if (req == null) TextAction(if (settings) "Done" else "Wallet", Wf.Mint) { settings = !settings } }
+            when {
+                sent?.accepted == true && req != null -> SentPanel(req)
+                env != null && req != null -> SignedPanel(req, env)
+                req != null -> ReviewPanel(req, vault, limit)
+                settings -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), Arrangement.spacedBy(18.dp)) {
+                    Spacer(Modifier.height(8.dp))
+                    T("Wallet", 28, FontWeight.Light, spacing = -0.6)
+                    T("Your payment key lives in the phone's secure hardware and signs only after you confirm.", 14, color = Wf.Dim, lineHeight = 20)
+                    Field("Your vault account", vault, mono = true) { vault = it; save("vault", it) }
+                    Field("Tap limit (NEAR)", limit, keyboard = KeyboardType.Decimal) { limit = it; save("tap_limit_near", it) }
+                    Card {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                T("Payment key", 15, FontWeight.Medium)
+                                T("ML-DSA-65, post-quantum", 13, color = Wf.Dim)
+                            }
+                            Pill(if (keyReady) "Created" else "Not created", if (keyReady) Tone.Live else Tone.Warn)
+                        }
+                        Spacer(Modifier.height(16.dp))
+                        if (!keyReady) {
+                            PrimaryButton("Create payment key") { authenticate("Create your payment key") { store.createIfMissing(); keyReady = true; message = "Key created. Share its public key with the vault owner to register it." } }
+                        } else {
+                            SecondaryButton("Share public key") { sharePublicKey() }
+                        }
+                    }
+                }
+                else -> Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Spacer(Modifier.weight(1f))
+                    Radar()
+                    Spacer(Modifier.height(32.dp))
+                    T("Ready to pay", 32, FontWeight.Light, spacing = -0.8)
+                    Spacer(Modifier.height(10.dp))
+                    T(
+                        if (nfc?.available == false) "NFC is off or missing on this phone. Scan the merchant's code instead."
+                        else "Hold this phone to the back of the merchant's phone.",
+                        15, color = Wf.Dim, align = TextAlign.Center, lineHeight = 22,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    SecondaryButton("Scan the merchant's code") { scanRequest() }
+                    Spacer(Modifier.height(14.dp))
+                }
             }
         }
     }
 
+    @Composable
+    private fun ReviewPanel(r: PaymentRequest, vault: String, limit: String) {
+        Column(Modifier.fillMaxSize()) {
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
+                Spacer(Modifier.height(10.dp))
+                Eyebrow("Pay " + r.merchantName)
+                Spacer(Modifier.height(16.dp))
+                Amount(symbolOf(r.fiatCurrency), figureOf(r), 60)
+                Spacer(Modifier.height(10.dp))
+                T("= " + nearText(r), 17, color = Wf.Dim)
+                Spacer(Modifier.height(28.dp))
+                Card(pad = 8.dp) {
+                    Column(Modifier.padding(horizontal = 12.dp)) {
+                        DetailRow("To", r.merchantAccount, mono = true)
+                        Hairline()
+                        DetailRow("From vault", vault.ifEmpty { "not set" }, mono = true)
+                        Hairline()
+                        DetailRow("Tap limit", "$limit NEAR")
+                        Hairline()
+                        DetailRow("Rate (demo)", "${r.rate} per NEAR")
+                    }
+                }
+            }
+            PrimaryButton("Approve with fingerprint or PIN") { approve(r) }
+            Spacer(Modifier.height(10.dp))
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { TextAction("Decline", Wf.Dim) { incoming = null; message = "" } }
+            Spacer(Modifier.height(4.dp))
+        }
+    }
+
+    @Composable
+    private fun SignedPanel(r: PaymentRequest, env: ChequeEnvelope) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
+            Spacer(Modifier.height(6.dp))
+            Pill("Signed. Not sent yet", Tone.Warn)
+            Spacer(Modifier.height(14.dp))
+            Amount(symbolOf(r.fiatCurrency), figureOf(r), 44)
+            Spacer(Modifier.height(20.dp))
+            val frames = remember(env) { encodeFrames(env.encode(), r.nonce.copyOf(4)) }
+            Frames(frames) { img, i -> QrCard(img, if (frames.size > 1) "Frame ${i + 1} of ${frames.size}. Keep it in view until the merchant has scanned all." else "Merchant: scan this.") }
+            Spacer(Modifier.height(18.dp))
+            T("Hold the phones together again to send it by tap, or let the merchant scan the code.", 14, color = Wf.Dim, align = TextAlign.Center, lineHeight = 20)
+            Spacer(Modifier.height(14.dp))
+        }
+    }
+
+    @Composable
+    private fun SentPanel(r: PaymentRequest) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
+            Spacer(Modifier.height(24.dp))
+            SuccessMark()
+            Spacer(Modifier.height(22.dp))
+            T("Sent to " + r.merchantName, 28, FontWeight.Light, spacing = -0.6, align = TextAlign.Center)
+            Spacer(Modifier.height(12.dp))
+            Amount(symbolOf(r.fiatCurrency), figureOf(r), 40)
+            Spacer(Modifier.height(14.dp))
+            Pill("Pending settlement", Tone.Warn)
+            Spacer(Modifier.height(20.dp))
+            T("The merchant has your signed cheque. It is not final until it settles on-chain.", 14, color = Wf.Dim, align = TextAlign.Center, lineHeight = 20)
+            Spacer(Modifier.weight(1f))
+            PrimaryButton("Done") { incoming = null; envelope = null; sentResult = null; message = "" }
+            Spacer(Modifier.height(14.dp))
+        }
+    }
+
+    @Composable
+    private fun PulseDot() {
+        val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "pulse")
+        val a by t.animateFloat(
+            0.25f, 1f,
+            androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(900), androidx.compose.animation.core.RepeatMode.Reverse),
+            label = "a",
+        )
+        Box(Modifier.size(12.dp).alpha(a).clip(androidx.compose.foundation.shape.CircleShape).background(Wf.Mint))
+    }
+
     private fun sharePublicKey() {
-        val seed = ByteArray(0) // the public key is derived on demand; unlocking is required to read the seed
         authenticate("Show your public key") {
             val s = store.load()
             val publicKey = SeedSigner(s).publicKey
@@ -319,11 +608,11 @@ class MainActivity : ComponentActivity() {
             val text = "Wayfarer buyer key (ML-DSA-65)\nkey_id: ${sha256(publicKey).toHex()}\npublic_key_hex: ${publicKey.toHex()}"
             startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), "Share public key"))
         }
-        seed.fill(0)
     }
 
+    /** Cycles through multi-frame QR codes. */
     @Composable
-    private fun FrameImages(frames: List<String>) {
+    private fun Frames(frames: List<String>, render: @Composable (androidx.compose.ui.graphics.ImageBitmap, Int) -> Unit) {
         var index by remember(frames) { mutableStateOf(0) }
         LaunchedEffect(frames) {
             while (true) {
@@ -332,26 +621,46 @@ class MainActivity : ComponentActivity() {
             }
         }
         val bitmap = remember(frames, index) { qrBitmap(frames[index]).asImageBitmap() }
-        Image(bitmap, "QR frame ${index + 1} of ${frames.size}", Modifier.fillMaxWidth().size(320.dp))
-        Note("Frame ${index + 1} of ${frames.size}. Keep it in view until every frame has been scanned.")
+        render(bitmap, index)
     }
 
-    @Composable
-    private fun Title(text: String) = BasicText(text, style = TextStyle(color = Ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold))
+    // ---- formatting
 
-    @Composable
-    private fun Note(text: String) = BasicText(text, style = TextStyle(color = Color(0xFF555555), fontSize = 14.sp))
+    private fun symbolOf(currency: String) = if (currency == "NGN") "₦" else currency
 
-    @Composable
-    private fun Btn(text: String, onClick: () -> Unit) = Box(Modifier.fillMaxWidth().background(Accent).clickable(onClick = onClick).padding(14.dp)) {
-        BasicText(text, style = TextStyle(color = Color.White, fontSize = 16.sp))
-    }
+    private fun figureOf(r: PaymentRequest): String =
+        "%,.2f".format(BigDecimal(r.fiatMinor).movePointLeft(r.fiatExponent)).let { if (it.endsWith(".00")) it.dropLast(3) else it }
 
-    @Composable
-    private fun Field(label: String, value: String, onChange: (String) -> Unit) {
-        Note(label)
-        Box(Modifier.fillMaxWidth().background(Color(0xFFEFEFEF)).padding(10.dp)) {
-            BasicTextField(value, onChange, modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(color = Ink, fontSize = 16.sp), singleLine = true)
+    private fun nearText(r: PaymentRequest): String =
+        if (r.tokenId == "near") BigDecimal(r.assetAmount).movePointLeft(24).stripTrailingZeros().toPlainString() + " NEAR"
+        else com.wayfarer.tap.assetText(r.tokenId, r.assetAmount)
+
+    private fun figureWithSymbol(r: PaymentRequest) = symbolOf(r.fiatCurrency) + figureOf(r)
+
+    /** Keypad entry: digits plus at most one point and two decimals, no leading zeros. */
+    private fun editAmount(current: String, key: String): String = when (key) {
+        "<" -> current.dropLast(1)
+        "." -> if (current.contains('.')) current else (if (current.isEmpty()) "0." else "$current.")
+        else -> when {
+            current.contains('.') && current.substringAfter('.').length >= 2 -> current
+            current == "0" -> key
+            current.length >= 9 -> current
+            else -> current + key
         }
+    }
+
+    private fun groupEntry(raw: String): String {
+        if (raw.isEmpty()) return "0"
+        val whole = raw.substringBefore('.')
+        val grouped = whole.reversed().chunked(3).joinToString(",").reversed()
+        return if (raw.contains('.')) grouped + "." + raw.substringAfter('.') else grouped
+    }
+
+    private fun nearHint(raw: String, rate: String): String = try {
+        val naira = BigDecimal(if (raw.isEmpty() || raw == ".") "0" else raw.trimEnd('.'))
+        val near = naira.divide(BigDecimal(rate), 4, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
+        "≈ $near NEAR at the demo rate"
+    } catch (e: Exception) {
+        "Enter an amount"
     }
 }
