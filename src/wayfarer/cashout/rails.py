@@ -2,7 +2,7 @@
 
 * :class:`SandboxRail` is a SANDBOX: it validates the bank details, applies a configured demo FX rate and fee, and writes
   a local ledger file. No bank, no money, no network. It exists so anyone can run the whole cash-out flow.
-* A real Nigerian bank payout needs a licensed partner (Wayfarer does not custody or convert fiat). A partner rail would
+* A real bank payout needs a licensed partner (Wayfarer does not custody or convert fiat). A partner rail would
   implement the same :class:`Rail` protocol; none is shipped in this repository.
 """
 
@@ -21,7 +21,7 @@ from typing import Protocol
 from wayfarer.errors import WayfarerError
 
 _BANK_CODE = re.compile(r"[0-9]{3,6}", re.ASCII)
-_ACCOUNT_NUMBER = re.compile(r"[0-9]{10}", re.ASCII)
+_ACCOUNT_NUMBER = re.compile(r"[0-9]{6,17}", re.ASCII)
 _USDC_UNIT = Decimal(10) ** 6
 
 
@@ -31,7 +31,7 @@ class RailError(WayfarerError):
 
 @dataclass(frozen=True, slots=True)
 class BankAccount:
-    """A Nigerian bank account (NUBAN, 10 digits). The sandbox does not verify the name or the check digit."""
+    """A bank account (6-17 digits). The sandbox does not verify the name or any check digit."""
 
     bank_code: str
     account_number: str
@@ -41,7 +41,7 @@ class BankAccount:
         if not _BANK_CODE.fullmatch(self.bank_code):
             raise RailError("The bank code must be 3-6 digits.")
         if not _ACCOUNT_NUMBER.fullmatch(self.account_number):
-            raise RailError("The account number must be 10 digits.")
+            raise RailError("The account number must be 6-17 digits.")
         if not 1 <= len(self.account_name.strip()) <= 80:
             raise RailError("The account name must be 1-80 characters.")
 
@@ -61,10 +61,11 @@ class DepositTarget:
 @dataclass(frozen=True, slots=True)
 class RailQuote:
     usdc_in: int  # smallest unit (6 decimals)
-    ngn_out: Decimal
-    fee_ngn: Decimal
-    ngn_per_usd: Decimal
+    fiat_out: Decimal
+    fee_fiat: Decimal
+    fiat_per_usd: Decimal
     label: str
+    currency: str = "USD"
 
 
 class PayoutStatus(StrEnum):
@@ -77,9 +78,10 @@ class PayoutStatus(StrEnum):
 class PayoutResult:
     status: PayoutStatus
     reference: str
-    ngn_amount: Decimal
+    fiat_amount: Decimal
     message: str
     rail_label: str
+    currency: str = "USD"
 
 
 class Rail(Protocol):
@@ -104,14 +106,16 @@ class SandboxRail:
         self,
         ledger: Path,
         *,
-        ngn_per_usd: Decimal,
+        fiat_per_usd: Decimal,
+        currency: str = "USD",
         fee_bps: int = 100,
         clock_iso: Callable[[], str] = lambda: "",
     ) -> None:
-        if ngn_per_usd <= 0 or not 0 <= fee_bps < 10_000:
+        if fiat_per_usd <= 0 or not 0 <= fee_bps < 10_000:
             raise RailError("The sandbox FX rate and fee are invalid.")
         self._ledger = ledger
-        self._rate = ngn_per_usd
+        self._rate = fiat_per_usd
+        self._currency = currency
         self._fee_bps = fee_bps
         self._clock = clock_iso
 
@@ -123,7 +127,7 @@ class SandboxRail:
             raise RailError("The USDC amount must be positive.")
         gross = (Decimal(usdc_in) / _USDC_UNIT * self._rate).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
         fee = (gross * self._fee_bps / Decimal(10_000)).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
-        return RailQuote(usdc_in, gross - fee, fee, self._rate, self.label)
+        return RailQuote(usdc_in, gross - fee, fee, self._rate, self.label, self._currency)
 
     def _read(self) -> dict[str, dict[str, str]]:
         if not self._ledger.exists():
@@ -136,11 +140,12 @@ class SandboxRail:
         known = entries.get(reference)
         if known is not None:
             return PayoutResult(
-                PayoutStatus.PAID, reference, Decimal(known["ngn"]), "Already paid (sandbox ledger).", self.label
+                PayoutStatus.PAID, reference, Decimal(known["fiat"]), "Already paid (sandbox ledger).", self.label, self._currency
             )
         quote = self.quote(usdc_in)
         entries[reference] = {
-            "ngn": str(quote.ngn_out),
+            "fiat": str(quote.fiat_out),
+            "currency": self._currency,
             "usdc_in": str(usdc_in),
             "bank": bank.masked,
             "name": bank.account_name,
@@ -152,5 +157,5 @@ class SandboxRail:
         tmp.write_text(json.dumps(entries, indent=1))
         os.replace(tmp, self._ledger)
         return PayoutResult(
-            PayoutStatus.PAID, reference, quote.ngn_out, "Credited in the sandbox ledger only.", self.label
+            PayoutStatus.PAID, reference, quote.fiat_out, "Credited in the sandbox ledger only.", self.label, self._currency
         )

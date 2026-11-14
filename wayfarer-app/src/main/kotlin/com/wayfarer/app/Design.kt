@@ -367,7 +367,7 @@ fun DetailRow(label: String, value: String, mono: Boolean = false) {
 @Composable
 fun Hairline() = Box(Modifier.fillMaxWidth().height(1.dp).background(Wf.Line))
 
-/** Naira (or other fiat) figure: large, light, tight; the symbol sits smaller and dimmer on the baseline. */
+/** Fiat figure: large, light, tight; the symbol sits smaller and dimmer on the baseline. */
 @Composable
 fun Amount(symbol: String, figure: String, size: Int = 56, dim: Boolean = false) {
     Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.Center) {

@@ -32,12 +32,12 @@ from wayfarer.oneclick import OneClick
 from wayfarer.swap import SwapOutcome
 
 NEAR = 10**24
-BANK = BankAccount("058", "0123456789", "Ada Okafor")
+BANK = BankAccount("058", "0123456789", "Sam Carter")
 TARGET = DepositTarget("nep141:sandbox-usdc.invalid", "dest")
 
 
 def rail(tmp: str, **kw: Any) -> SandboxRail:
-    return SandboxRail(Path(tmp) / "ledger.json", ngn_per_usd=Decimal("1500"), **kw)
+    return SandboxRail(Path(tmp) / "ledger.json", fiat_per_usd=Decimal("1500"), **kw)
 
 
 class BankAccountTest(unittest.TestCase):
@@ -45,8 +45,8 @@ class BankAccountTest(unittest.TestCase):
         self.assertEqual(BANK.masked, "058 ****6789")
         for bank_code, number, name in (
             ("5", "0123456789", "A"),
-            ("058", "123", "A"),
-            ("058", "01234567890", "A"),
+            ("058", "12345", "A"),
+            ("058", "012345678901234567", "A"),
             ("058", "0123456789", " "),
         ):
             with self.subTest(number), self.assertRaises(RailError):
@@ -57,7 +57,7 @@ class SandboxRailTest(unittest.TestCase):
     def test_quote_math_and_label(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             quote = rail(tmp).quote(100 * 10**6)  # 100 USDC
-            self.assertEqual((quote.fee_ngn, quote.ngn_out), (Decimal("1500.00"), Decimal("148500.00")))
+            self.assertEqual((quote.fee_fiat, quote.fiat_out), (Decimal("1500.00"), Decimal("148500.00")))
             self.assertIn("SANDBOX", quote.label)
 
     def test_payout_is_idempotent_and_writes_a_labelled_ledger(self) -> None:
@@ -65,7 +65,7 @@ class SandboxRailTest(unittest.TestCase):
             sandbox = rail(tmp, clock_iso=lambda: "2026-11-13T12:00:00Z")
             first = sandbox.payout("ref-1", 10 * 10**6, BANK)
             again = sandbox.payout("ref-1", 99 * 10**6, BANK)  # a retry must not pay twice or change the amount
-            self.assertEqual((first.status, again.ngn_amount), (PayoutStatus.PAID, first.ngn_amount))
+            self.assertEqual((first.status, again.fiat_amount), (PayoutStatus.PAID, first.fiat_amount))
             ledger = json.loads((Path(tmp) / "ledger.json").read_text())
             self.assertEqual(list(ledger), ["ref-1"])
             self.assertIn("no real money", ledger["ref-1"]["note"])
@@ -75,7 +75,7 @@ class SandboxRailTest(unittest.TestCase):
     def test_bad_configuration_and_amounts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(RailError):
-                SandboxRail(Path(tmp) / "l.json", ngn_per_usd=Decimal(0))
+                SandboxRail(Path(tmp) / "l.json", fiat_per_usd=Decimal(0))
             with self.assertRaises(RailError):
                 rail(tmp).quote(0)
 
@@ -119,14 +119,14 @@ class CashOutServiceTest(unittest.TestCase):
     def service(self, tmp: str, outcome: SwapOutcome = SwapOutcome.DELIVERED) -> CashOutService:
         return CashOutService(SandboxSwapLeg(usd_per_near=Decimal("3.4"), outcome=outcome), rail(tmp))
 
-    def test_happy_path_pays_naira_sized_on_the_swap_minimum(self) -> None:
+    def test_happy_path_pays_fiat_sized_on_the_swap_minimum(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             service = self.service(tmp)
             quote = service.quote(reference="sale-1", amount_in=3 * NEAR // 10, bank=BANK, refund_to="me.near")
             text = quote.read_back()
             for needle in (
                 "0.300000 NEAR",
-                "Ada Okafor",
+                "Sam Carter",
                 "058 ****6789",
                 "estimate",
                 "SANDBOX",
@@ -135,7 +135,7 @@ class CashOutServiceTest(unittest.TestCase):
                 self.assertIn(needle, text)
             result = service.execute(quote)
             self.assertEqual(result.status, CashOutStatus.PAID)
-            self.assertEqual(result.payout.ngn_amount, quote.rail.ngn_out)  # type: ignore[union-attr]
+            self.assertEqual(result.payout.fiat_amount, quote.rail.fiat_out)  # type: ignore[union-attr]
             self.assertEqual(service.execute(quote).status, CashOutStatus.PAID)  # retry: still paid once
             self.assertEqual(len(json.loads((Path(tmp) / "ledger.json").read_text())), 1)
 

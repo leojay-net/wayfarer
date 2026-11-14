@@ -6,35 +6,35 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class OrderPricerTest {
-    private val menu = listOf(MenuItem("Jollof rice", 1500), MenuItem("Zobo", 500), MenuItem("Bottled water", 300))
+    private val menu = listOf(MenuItem("Coffee", 3), MenuItem("Pastry", 2), MenuItem("Bottled water", 1))
 
     @Test fun pricesFromTheMenuOnly() {
-        val o = OrderPricer.price(menu, listOf("jollof rice" to 2, "ZOBO" to 1))
-        assertEquals(3500, o.totalNaira)
+        val o = OrderPricer.price(menu, listOf("coffee" to 2, "PASTRY" to 1))
+        assertEquals(8, o.total)
         assertTrue(o.ready)
     }
 
     @Test fun mergesRepeatedItems() {
-        val o = OrderPricer.price(menu, listOf("Zobo" to 1, "Zobo" to 2))
+        val o = OrderPricer.price(menu, listOf("Pastry" to 1, "Pastry" to 2))
         assertEquals(1, o.lines.size)
-        assertEquals(1500, o.totalNaira)
+        assertEquals(6, o.total)
     }
 
     @Test fun unknownItemsAreReportedNotGuessed() {
-        val o = OrderPricer.price(menu, listOf("Zobo" to 1, "Pizza" to 1))
+        val o = OrderPricer.price(menu, listOf("Pastry" to 1, "Pizza" to 1))
         assertFalse(o.ready)
         assertEquals(listOf("Pizza"), o.unmatched)
     }
 
     @Test fun badQuantitiesAreRefused() {
-        assertFalse(OrderPricer.price(menu, listOf("Zobo" to 0)).ready)
-        assertFalse(OrderPricer.price(menu, listOf("Zobo" to 51)).ready)
-        assertFalse(OrderPricer.price(menu, listOf("Zobo" to -3)).ready)
+        assertFalse(OrderPricer.price(menu, listOf("Pastry" to 0)).ready)
+        assertFalse(OrderPricer.price(menu, listOf("Pastry" to 51)).ready)
+        assertFalse(OrderPricer.price(menu, listOf("Pastry" to -3)).ready)
     }
 
     @Test fun emptyOrderIsNotReady() { assertFalse(OrderPricer.price(menu, emptyList()).ready) }
 
     @Test fun modelNotUnderstoodPhrasesBlockTheCharge() {
-        assertFalse(OrderPricer.price(menu, listOf("Zobo" to 1), listOf("something blue")).ready)
+        assertFalse(OrderPricer.price(menu, listOf("Pastry" to 1), listOf("something blue")).ready)
     }
 }

@@ -13,7 +13,7 @@ class ApduTest {
     private val now = 1_800_000_000_000L
     private val vault = "buyer-vault.testnet"
 
-    private fun terminal() = MerchantTerminal("ada-shop.testnet", "Ada's Shop", { BigDecimal("5000") }, { now })
+    private fun terminal() = MerchantTerminal("cafe-shop.testnet", "Sam's Cafe", { BigDecimal("5000") }, { now })
 
     /** Wire a server and client together, checking that no command or reply exceeds the short-APDU limits. */
     private fun wire(server: ApduServer, log: MutableList<ByteArray> = mutableListOf()): ApduClient = ApduClient { command ->

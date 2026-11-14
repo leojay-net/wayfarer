@@ -44,9 +44,9 @@ class Yes:
 
 
 def terminal(clock: Clock, nonce: bytes = bytes(range(16))) -> MerchantTerminal:
-    desk = RateDesk(FixedRateSource({("NGN", "near"): Decimal("5000")}), clock, new_id=lambda: "q-test-0001")
+    desk = RateDesk(FixedRateSource({("USD", "near"): Decimal("5000")}), clock, new_id=lambda: "q-test-0001")
     return MerchantTerminal(
-        account="ada-shop.testnet", name="Ada's Shop", rates=desk, clock_ms=clock, nonce_factory=lambda: nonce
+        account="cafe-shop.testnet", name="Sam's Cafe", rates=desk, clock_ms=clock, nonce_factory=lambda: nonce
     )
 
 
@@ -85,23 +85,23 @@ class CodecTest(unittest.TestCase):
 
 class RatesTest(unittest.TestCase):
     def quote(self, price: str) -> RateQuote:
-        return RateQuote("q", "NGN", "near", Decimal(price), 1, 2)
+        return RateQuote("q", "USD", "near", Decimal(price), 1, 2)
 
-    def test_naira_to_near(self) -> None:
+    def test_fiat_to_near(self) -> None:
         self.assertEqual(asset_amount(self.quote("5000"), 150_000, 2), 3 * NEAR // 10)
 
     def test_rounds_up_so_the_merchant_never_gets_less(self) -> None:
         self.assertEqual(asset_amount(self.quote("3"), 1, 2), 3_333_333_333_333_333_333_334)
 
     def test_unsupported_token_and_missing_rate(self) -> None:
-        desk = RateDesk(FixedRateSource({("NGN", "near"): Decimal(1)}), Clock())
+        desk = RateDesk(FixedRateSource({("USD", "near"): Decimal(1)}), Clock())
         with self.assertRaises(TapError):
-            desk.lock("NGN", "usdc.near")
+            desk.lock("USD", "usdc.near")
         with self.assertRaises(TapError):
-            RateDesk(FixedRateSource({}), Clock()).lock("NGN", "near")
+            RateDesk(FixedRateSource({}), Clock()).lock("USD", "near")
 
     def test_lock_window_is_sixty_seconds(self) -> None:
-        quote = RateDesk(FixedRateSource({("NGN", "near"): Decimal(1)}), Clock()).lock("NGN", "near")
+        quote = RateDesk(FixedRateSource({("USD", "near"): Decimal(1)}), Clock()).lock("USD", "near")
         self.assertEqual(quote.expires_ms - quote.created_ms, 60_000)
 
 
@@ -114,7 +114,7 @@ class RequestTest(unittest.TestCase):
         self.assertEqual(self.request.request_hash().hex(), VECTORS["request_hash_hex"])
         self.assertEqual(self.request.intent_id(), VECTORS["intent_id"])
         self.assertEqual(self.request.receipt_hash(), VECTORS["receipt_hash"])
-        self.assertEqual(self.request.fiat_display(), "NGN 1,500.00")
+        self.assertEqual(self.request.fiat_display(), "USD 1,500.00")
         self.assertEqual(cheque_for_request(self.request, VAULT).message().hex(), VECTORS["cheque_message_hex"])
 
     def test_decode_round_trip(self) -> None:
@@ -129,7 +129,7 @@ class RequestTest(unittest.TestCase):
         for change in (
             {"merchant_account": "Not An Account"},
             {"merchant_name": ""},
-            {"fiat_currency": "ngn"},
+            {"fiat_currency": "usd"},
             {"fiat_minor": 0},
             {"fiat_exponent": 9},
             {"asset_amount": 0},
@@ -173,7 +173,7 @@ class BuyerTest(unittest.TestCase):
         yes = Yes()
         buyer = wallet(clock, yes)
         envelope = buyer.pay(request)
-        self.assertEqual(yes.seen[0].lines()[0], "Pay NGN 1,500.00 to Ada's Shop")
+        self.assertEqual(yes.seen[0].lines()[0], "Pay USD 1,500.00 to Sam's Cafe")
         self.assertEqual(yes.seen[0].asset_text, "0.300000 NEAR")
         self.assertTrue(
             mldsa.verify(
@@ -423,7 +423,7 @@ class TwoPhonesTest(unittest.TestCase):
         received = PaymentRequest.decode(buyer_link.receive(0.1) or b"")
         buyer_link.send(buyer.pay(received).encode())
         accepted = merchant.accept(merchant_link.receive(0.1) or b"")
-        self.assertEqual(accepted.cheque.to, "ada-shop.testnet")
+        self.assertEqual(accepted.cheque.to, "cafe-shop.testnet")
 
     def test_over_lossy_qr_frames(self) -> None:
         clock = Clock()

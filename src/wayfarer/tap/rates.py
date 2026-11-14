@@ -20,7 +20,7 @@ DEFAULT_LOCK_MS = 60_000
 
 class RateSource(Protocol):
     def fiat_per_token(self, fiat_currency: str, token_id: str) -> Decimal:
-        """Fiat units (major, e.g. naira) for one whole token."""
+        """Fiat units (major, e.g. dollars) for one whole token."""
         ...
 
 

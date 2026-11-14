@@ -1,14 +1,14 @@
 # Wayfarer
 
-**Spend naira, hold NEAR.** A buyer taps their phone on a merchant's phone, approves a price shown in naira, and a **quantum-safe (ML-DSA-65), policy-bounded, human-approved** payment is made from their on-chain vault. The merchant can cash out toward a bank with one button. Both sides get a receipt that anyone can check in a browser.
+**Hold NEAR, pay anywhere.** A buyer taps their phone on a merchant's phone, approves a price shown in their own currency, and a **quantum-safe (ML-DSA-65), policy-bounded, human-approved** payment is made from their on-chain vault. The merchant can cash out toward a bank with one button. Both sides get a receipt that anyone can check in a browser.
 
 **Status: working prototype on NEAR *testnet* (valueless funds). Unaudited. Not on mainnet. Not yet run on two real phones.** Read "What is real, what is simulated" before judging anything. Everything stated as working below was run; each claim names the command or file that shows it.
 
 ## The flow
 
-1. **Merchant** enters NGN 500. The app locks a rate for 60 s (a hand-typed DEMO rate, no market feed) and shows a *PaymentRequest*: merchant account, naira amount, NEAR amount (rounded **up**), quote id, expiry, nonce.
+1. **Merchant** enters USD 5. The app locks a rate for 60 s (a hand-typed DEMO rate, no market feed) and shows a *PaymentRequest*: merchant account, fiat amount, NEAR amount (rounded **up**), quote id, expiry, nonce.
 2. **Tap.** NFC (merchant phone = card, buyer phone = reader) or an animated QR as the always-works fallback.
-3. **Buyer** sees "Pay NGN 500.00 to Ada's Shop = 0.100000 NEAR", confirms with fingerprint/PIN, and the phone signs a **cheque** with an **ML-DSA-65** key. That key is registered in the vault with a mandate (per-payment cap, daily cap, end date, minimum interval, optional payee allow-list). It cannot withdraw or change policy.
+3. **Buyer** sees "Pay USD 5.00 to Sam's Cafe = 0.500000 NEAR", confirms with fingerprint/PIN, and the phone signs a **cheque** with an **ML-DSA-65** key. That key is registered in the vault with a mandate (per-payment cap, daily cap, end date, minimum interval, optional payee allow-list). It cannot withdraw or change policy.
 4. **Merchant** checks the cheque offline (signature, amount, request hash) and shows **"accepted, pending settlement"**. This is *not* payment.
 5. **Settlement.** The merchant (or any relayer) submits `pay_with_cheque`. The vault contract verifies the ML-DSA signature **on-chain** with the NEAR `ml_dsa_verify` host function, enforces the mandate, emits `payment_authorized` / `payment_settled`, and records the one-time payment id. It is paid only when that event is final.
 6. **Cash-out.** NEAR -> USDC -> bank, behind one button, through a `SwapLeg` and a `Rail`. Only **sandbox** implementations exist (see limits).
@@ -23,8 +23,8 @@
 | Vault contract v2 (`contracts/wayfarer-vault`) | `pay_with_cheque`, ML-DSA agent keys, mandate, `get_mandate`, rollback of budget on a failed transfer. 40 unit + 4 sandbox + 2 delegate tests pass. Deployed to testnet as `wfpq-vault-9bda7c.testnet` | Native NEAR only for cheques. Unaudited |
 | Settlement on testnet | Paid cheques, replay / over-cap / forged / expired / revoked / too-soon refusals, each a testnet tx: [docs/TESTNET-PQ.md](docs/TESTNET-PQ.md). A fresh run with a real receipt: [docs/examples/tap-receipt](docs/examples/tap-receipt) (tx `AimPaHPTXaYovVAKA9eLMqCh2eSqpXdcoap6brYPU4BN`) | The cheques were made and submitted by scripts on one computer |
 | Tap protocol | Messages, strict codec, rate lock, envelope, QR frames, buyer wallet, merchant terminal in Python (`src/wayfarer/tap/`) and Kotlin (`wayfarer-tap/`); both reproduce the same bytes from `tests/vectors/tap.json` | Both phones are simulated in `scripts/tap_demo.py` |
-| Android app (`wayfarer-app/`) | Debug APK builds (`./gradlew :wayfarer-app:assembleDebug`) and **runs on the Android 36 emulator** with a custom dark design system and logo: the merchant keypad creates a request (NGN 1,500 = 0.3 NEAR with a QR code); the buyer creates a payment key behind a PIN, reviews and approves a request, and signs a real ML-DSA-65 cheque shown as a 6-frame QR. On the emulator the buyer's request is injected with a debug-only intent extra (`demo_request_hex`, ignored by release builds) because there is no second phone or camera. NFC card/reader code uses the unit-tested APDU state machine | **Never run on two real phones.** NFC throughput for a 5.4 KB cheque, the QR scan loop, the biometric prompt and the Keystore path are untested on hardware. Nearby/Bluetooth not built. The merchant phone does **not** submit transactions: it exports the accepted cheque and `scripts/settle_cheque.py` settles it |
-| Merchant order agent (`wayfarer-app/.../MerchantAgent.kt`, `wayfarer-tap/.../OrderPricer.kt`) | The shopkeeper types or dictates an order ("one jollof rice"); a model on NEAR AI Cloud picks items and counts from the shop's own menu; **the total is computed in code from the menu, never by the model**; unknown items block the charge; the merchant confirms before a request is made. Only the order text leaves the phone, never buyer data. 6 unit tests for the pricing rule. Verified on the emulator against the live model | Needs the merchant's own NEAR AI key (entered in Setup, stored on the device; a prototype choice). The demo menu is fixed in code. The agent cannot move money and is not part of the signing or settlement path |
+| Android app (`wayfarer-app/`) | Debug APK builds (`./gradlew :wayfarer-app:assembleDebug`) and **runs on the Android 36 emulator** with a custom dark design system and logo: the merchant keypad creates a request (USD 3 = 0.3 NEAR at a demo rate, with a QR code); the buyer creates a payment key behind a PIN, reviews and approves a request, and signs a real ML-DSA-65 cheque shown as a 6-frame QR. On the emulator the buyer's request is injected with a debug-only intent extra (`demo_request_hex`, ignored by release builds) because there is no second phone or camera. NFC card/reader code uses the unit-tested APDU state machine | **Never run on two real phones.** NFC throughput for a 5.4 KB cheque, the QR scan loop, the biometric prompt and the Keystore path are untested on hardware. Nearby/Bluetooth not built. The merchant phone does **not** submit transactions: it exports the accepted cheque and `scripts/settle_cheque.py` settles it |
+| Merchant order agent (`wayfarer-app/.../MerchantAgent.kt`, `wayfarer-tap/.../OrderPricer.kt`) | The shopkeeper types or dictates an order ("one coffee"); a model on NEAR AI Cloud picks items and counts from the shop's own menu; **the total is computed in code from the menu, never by the model**; unknown items block the charge; the merchant confirms before a request is made. Only the order text leaves the phone, never buyer data. 6 unit tests for the pricing rule. Verified on the emulator against the live model | Needs the merchant's own NEAR AI key (entered in Setup, stored on the device; a prototype choice). The demo menu is fixed in code. The agent cannot move money and is not part of the signing or settlement path |
 | Mandate Passport + receipt v2 | Passport signed by the owner's ML-DSA key; 20 checks (offline + on-chain) in Python and in JavaScript with the same check names; verified on the real testnet receipt | `verifier/index.html` was run in headless Chrome against the live testnet RPC (20 of 20 checks passed) and through Node with a faked RPC; no other browsers were tried. The passport is inspired by AP2 / UK commercial VRP and is **not compliant** with either |
 | Cash-out | `CashOutService`, `SwapLeg`/`Rail` interfaces, a NEAR Intents 1Click quote leg, sandbox legs (`src/wayfarer/cashout/`, [docs/CASHOUT.md](docs/CASHOUT.md)) | **No swap executed, no bank paid, no money moved.** The rail is a sandbox ledger. No licensed partner is integrated |
 | Rates | 60 s lock, round-up maths | The rate is typed in by hand (DEMO), not a market feed |
@@ -33,9 +33,9 @@
 - **Offline acceptance is not final.** Until `pay_with_cheque` settles, the cheque can fail: empty vault, revoked key, ended mandate, daily cap used by other cheques. Mitigations that exist: a per-tap limit on the phone, a short expiry, and an online *strong check* (`MerchantTerminal.strong_check`) that reads the vault. Residual risk remains.
 - Android only (iOS restricts card emulation). Rate risk: the lock covers the cheque window only; keep amounts small.
 - A 5 s minimum interval does not rate-limit on this chain (finality takes several seconds); we recorded this mistake in [docs/TESTNET-PQ.md](docs/TESTNET-PQ.md).
-- A receipt does not prove which human pressed the button, or that goods were delivered. Sharing one reveals the merchant and the naira amount.
+- A receipt does not prove which human pressed the button, or that goods were delivered. Sharing one reveals the merchant and the fiat amount.
 - Android's Keystore has no ML-DSA: the seed is stored encrypted under a Keystore AES key that needs a fresh unlock, but it sits in app memory while signing.
-- Cashing out to a Nigerian bank needs a licensed partner; we do not custody or convert fiat.
+- Cashing out to a bank needs a licensed partner; we do not custody or convert fiat.
 - Nothing here has moved real money. No mainnet run has been made.
 
 ## NEAR features used (and nothing else)
@@ -55,7 +55,7 @@ Python 3.11+ (standard library only at runtime). For development only: `pip inst
 python3 -I -m unittest discover -s tests -t .
 
 # 2. The whole tap on two SIMULATED phones, offline (no keys, no chain)
-python3 scripts/tap_demo.py --naira 500
+python3 scripts/tap_demo.py --amount 5
 
 # 3. Browser verifier tests (Node, tested with v24): real testnet receipt, tampering, faked RPC
 node --test verifier/receipt.test.js
@@ -69,7 +69,7 @@ python3 -m http.server -d verifier 8000      # then open http://localhost:8000 a
 cd contracts/wayfarer-vault && cargo fmt --check && cargo clippy --all-targets && cargo test && cd ../..
 
 # 6. Testnet (valueless funds; needs the ML-DSA seeds of docs/TESTNET-PQ.md in ~/.near-credentials/wayfarer-pq/)
-python3 scripts/tap_demo.py --naira 500 --testnet 9bda7c --save /tmp/receipt   # pays, builds + checks a receipt, revokes the buyer key
+python3 scripts/tap_demo.py --amount 3 --testnet 9bda7c --save /tmp/receipt   # pays, builds + checks a receipt, revokes the buyer key
 python3 scripts/add_phone_key.py --suffix 9bda7c --public-key-hex <hex from the app>
 python3 scripts/settle_cheque.py accepted.json --check-only                    # offline verify of a cheque the app exported
 python3 scripts/settle_cheque.py accepted.json --suffix 9bda7c --save out/     # settle on testnet, write a checked receipt

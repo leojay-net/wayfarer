@@ -20,7 +20,7 @@ _U128 = (1 << 128) - 1
 
 @dataclass(frozen=True, slots=True)
 class PaymentRequest:
-    """``fiat_minor`` is in the currency's minor unit (NGN kobo with ``fiat_exponent`` 2); ``asset_amount`` in the token's
+    """``fiat_minor`` is in the currency's minor unit (US cents with ``fiat_exponent`` 2); ``asset_amount`` in the token's
     smallest unit. ``rate`` is the locked price as text (fiat units per whole token) for display and audit only: the
     payment is exactly ``asset_amount``."""
 

@@ -47,9 +47,9 @@ def terms(**overrides: Any) -> MandateTerms:
 
 
 def make_receipt(passport_terms: MandateTerms | None = None) -> tuple[dict[str, Any], MandatePassport]:
-    desk = RateDesk(FixedRateSource({("NGN", "near"): Decimal("5000")}), lambda: NOW, new_id=lambda: "q1")
+    desk = RateDesk(FixedRateSource({("USD", "near"): Decimal("5000")}), lambda: NOW, new_id=lambda: "q1")
     merchant = MerchantTerminal(
-        account="ada-shop.testnet", name="Ada's Shop", rates=desk, clock_ms=lambda: NOW, nonce_factory=lambda: bytes(16)
+        account="cafe-shop.testnet", name="Sam's Cafe", rates=desk, clock_ms=lambda: NOW, nonce_factory=lambda: bytes(16)
     )
     request = merchant.create_request(150_000)
     wallet = BuyerWallet(
@@ -63,7 +63,7 @@ def make_receipt(passport_terms: MandateTerms | None = None) -> tuple[dict[str, 
         network="testnet",
         accepted=accepted,
         passport=passport,
-        settlement=Settlement("TXHASH", "ada-shop.testnet", "https://x/TXHASH"),
+        settlement=Settlement("TXHASH", "cafe-shop.testnet", "https://x/TXHASH"),
     )
     return receipt, passport
 
@@ -79,7 +79,7 @@ def outcome(receipt: dict[str, Any], **overrides: Any) -> dict[str, Any]:
         "declared_recipient": cheque["to"],
         "receipt_hash": cheque["receipt_hash"],
         "agent_key": f"ml-dsa-65:{key_id}",
-        "relayer": "ada-shop.testnet",
+        "relayer": "cafe-shop.testnet",
         **overrides.get("authorised", {}),
     }
     events = [{"standard": "wayfarer_vault", "version": "1.0.0", "event": "payment_authorized", "data": authorised}]

@@ -193,10 +193,10 @@ def _run(command: list[str], *, timeout: int) -> subprocess.CompletedProcess[str
 
 
 def stage_tap(_: argparse.Namespace, __: Settings) -> str:
-    run = _run([sys.executable, "-I", "scripts/tap_demo.py", "--naira", "500"], timeout=300)
+    run = _run([sys.executable, "-I", "scripts/tap_demo.py", "--amount", "5"], timeout=300)
     if run.returncode != 0:
         raise AssertionError(run.stdout[-600:] + run.stderr[-600:])
-    for needed in ("ACCEPTED, PENDING SETTLEMENT", "SANDBOX ONLY", "paid: NGN"):
+    for needed in ("ACCEPTED, PENDING SETTLEMENT", "SANDBOX ONLY", "paid: USD"):
         assert needed in run.stdout, f"tap demo output is missing {needed!r}"
     return "request -> ML-DSA cheque over QR frames (2 lost) -> offline accept -> sandbox cash-out (simulated phones)"
 

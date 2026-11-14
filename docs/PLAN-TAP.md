@@ -1,16 +1,16 @@
 # Wayfarer Tap: plan (13 Nov 2026)
 
-One line: **spend naira, hold NEAR.** A buyer taps their phone on a merchant's phone, approves a price shown in their own currency, and a quantum-safe, policy-bounded, human-approved payment is made. The merchant can cash out to a traditional bank in one button. Conversion happens behind the scenes.
+One line: **hold NEAR, pay anywhere.** A buyer taps their phone on a merchant's phone, approves a price shown in their own currency, and a quantum-safe, policy-bounded, human-approved payment is made. The merchant can cash out to a traditional bank in one button. Conversion happens behind the scenes.
 
 Merges the four chosen ideas: (1) quantum-safe keys, (2) phone-to-phone tap with offline cheques, (3) proof-of-approval receipts, (4) mandates that traditional finance recognises.
 
 ## Flow
-1. **Merchant** enters an amount in local currency (e.g. NGN 1,500). The app locks a rate for 60 s and shows a **PaymentRequest**: merchant NEAR account, NGN amount, asset amount, rate-quote id, expiry, nonce, request hash.
+1. **Merchant** enters an amount in local currency (e.g. USD 3.00). The app locks a rate for 60 s and shows a **PaymentRequest**: merchant NEAR account, fiat amount, asset amount, rate-quote id, expiry, nonce, request hash.
 2. **Tap.** NFC starts the session and carries the small request; larger data goes over the same NFC link in chunks, or over Bluetooth/Wi-Fi Direct (Android Nearby Connections), or as an animated QR as the always-works fallback. One `PaymentLink` interface, several transports, plus a loopback transport for tests.
-3. **Buyer** sees "NGN 1,500 to Ada's Shop", confirms with biometric/PIN. The phone signs a **cheque**: a NEP-366 `DelegateAction` (sender = buyer's vault, one `FunctionCall` to `pay_direct`, nonce, `max_block_height` expiry) with a restricted, policy-bound **ML-DSA-65** key held in the Android Keystore-backed store. The key cannot withdraw or change policy.
+3. **Buyer** sees "USD 3.00 to Sam's Cafe", confirms with biometric/PIN. The phone signs a **cheque**: a NEP-366 `DelegateAction` (sender = buyer's vault, one `FunctionCall` to `pay_direct`, nonce, `max_block_height` expiry) with a restricted, policy-bound **ML-DSA-65** key held in the Android Keystore-backed store. The key cannot withdraw or change policy.
 4. The cheque goes back over the link. The merchant app checks it locally (signature, expiry, amount matches the request, request hash) and shows "accepted, pending settlement".
 5. **Settlement.** The merchant app (or any relayer) submits the signed delegate action and pays the gas. The vault enforces the mandate on-chain, emits `payment_authorized`/`payment_settled`, and the nullifier blocks replay. The merchant sees "paid" only after the settled event at finality.
-6. **Cash out.** One button: NEAR -> USDC through NEAR Intents (`swap.py`) -> a bank rail (NIP through a licensed partner; a sandbox rail for anyone to run). The merchant sees naira arrive; the swap is hidden.
+6. **Cash out.** One button: NEAR -> USDC through NEAR Intents (`swap.py`) -> a bank rail (through a licensed local partner; a sandbox rail for anyone to run). The merchant sees their own currency arrive; the swap is hidden.
 7. **Receipt.** Both sides get a proof-of-approval receipt: commitment of the request, TEE-signed parse if voice/text was used, buyer approval bound to the request hash, mandate hash, on-chain event, bank reference. A static web page verifies it in the browser from public data.
 
 ## Honest limits (must stay in the README)
@@ -18,7 +18,7 @@ Merges the four chosen ideas: (1) quantum-safe keys, (2) phone-to-phone tap with
 - Android only (iOS restricts card emulation).
 - Rate risk: the rate lock covers the cheque window only; keep tap amounts small.
 - ML-DSA covers account/transaction signatures only. TEE signatures from NEAR AI Cloud are still ed25519. Validators stay classical. Reference signers are not constant-time.
-- Cash-out to a Nigerian bank needs a licensed partner; we do not custody or convert fiat ourselves.
+- Cash-out to a bank needs a licensed partner; we do not custody or convert fiat ourselves.
 - Nothing here has moved real money until a run says so.
 
 ## Mandates (idea 4)

@@ -15,7 +15,7 @@ import java.net.URL
  */
 object MerchantAgent {
     val DEMO_MENU = listOf(
-        MenuItem("Jollof rice", 1500), MenuItem("Fried chicken", 2000), MenuItem("Zobo", 500), MenuItem("Bottled water", 300),
+        MenuItem("Coffee", 3), MenuItem("Sandwich", 4), MenuItem("Pastry", 2), MenuItem("Bottled water", 1),
     )
     const val DEFAULT_BASE_URL = "https://cloud-api.near.ai/v1"
     const val DEFAULT_MODEL = "z-ai/glm-5.3-flash"
@@ -26,7 +26,7 @@ object MerchantAgent {
     fun price(order: String, menu: List<MenuItem>, apiKey: String, baseUrl: String = DEFAULT_BASE_URL, model: String = DEFAULT_MODEL): PricedOrder {
         if (apiKey.isBlank()) throw AgentException("Add your NEAR AI key in Setup to use the agent.")
         val names = menu.joinToString(", ") { it.name }
-        val system = "You are a till assistant for a food shop. The menu items are exactly: $names. Convert the customer's order " +
+        val system = "You are a till assistant for a cafe. The menu items are exactly: $names. Convert the customer's order " +
             "into JSON only, no other text: {\"lines\":[{\"item\":\"<exact menu name>\",\"qty\":<integer>}],\"unmatched\":[\"<phrases not on the menu>\"]}. " +
             "Never output prices. Use only exact menu names."
         var last = ""

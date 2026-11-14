@@ -16,7 +16,7 @@ Two Android 11+ phones with NFC, a laptop with this repo, the testnet accounts o
 2. **Buyer phone:** open the app, **I am the buyer**. Set the vault to `wfpq-vault-9bda7c.testnet` and the tap limit (0.5 NEAR). **Create my payment key** (fingerprint/PIN). **Share my public key**, and send the text to the laptop; it contains `key_id` and `public_key_hex`.
 3. **Laptop:** register that key on the vault: `python3 scripts/add_phone_key.py --suffix 9bda7c --public-key-hex <public_key_hex> --hours 24`.
 4. **Merchant phone:** **I am the merchant**. Account `wfpq-shop-9bda7c.testnet` (the relayer key in step 6 belongs to this account), a shop name, DEMO rate `5000`, amount `500`. **Create payment request.** Keep the screen on and unlocked.
-5. **Tap.** Buyer app open on the buyer screen, unlocked. Touch the backs of the phones (NFC antennas are usually near the camera; move slowly). The buyer shows "Pay NGN 500.00 to ... = 0.100000 NEAR". **Approve** (fingerprint/PIN), then touch again to send. The merchant shows **ACCEPTED, PENDING SETTLEMENT**, which is not payment. If NFC fails, use the QR path (**Scan the merchant's code**, then show the cheque frames to the merchant's scanner).
+5. **Tap.** Buyer app open on the buyer screen, unlocked. Touch the backs of the phones (NFC antennas are usually near the camera; move slowly). The buyer shows "Pay USD 5.00 to ... = 0.500000 NEAR". **Approve** (fingerprint/PIN), then touch again to send. The merchant shows **ACCEPTED, PENDING SETTLEMENT**, which is not payment. If NFC fails, use the QR path (**Scan the merchant's code**, then show the cheque frames to the merchant's scanner).
 6. **Settle.** On the merchant phone press **Share the accepted cheque** and send it to the laptop as `accepted.json`. Then:
    `python3 scripts/settle_cheque.py accepted.json --check-only`
    `python3 scripts/settle_cheque.py accepted.json --suffix 9bda7c --save out/ --revoke`
@@ -31,4 +31,4 @@ Two Android 11+ phones with NFC, a laptop with this repo, the testnet accounts o
 Put the numbers in the README only after you have them.
 
 ## If you only have one Android phone
-The app needs two phones for a tap (one is the merchant card, one is the reader). With one phone, show the simulated demo instead (`python3 scripts/tap_demo.py --naira 500 --testnet 9bda7c`) and say plainly that the phones are simulated.
+The app needs two phones for a tap (one is the merchant card, one is the reader). With one phone, show the simulated demo instead (`python3 scripts/tap_demo.py --amount 3 --testnet 9bda7c`) and say plainly that the phones are simulated.

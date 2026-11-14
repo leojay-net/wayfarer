@@ -99,7 +99,7 @@ class MerchantTerminal(
     private val open = mutableMapOf<String, PaymentRequest>()
     private val accepted = mutableSetOf<String>()
 
-    fun createRequest(fiatMinor: Long, fiatCurrency: String = "NGN", fiatExponent: Int = 2, tokenId: String = "near"): PaymentRequest {
+    fun createRequest(fiatMinor: Long, fiatCurrency: String = "USD", fiatExponent: Int = 2, tokenId: String = "near"): PaymentRequest {
         val price = fiatPerToken()
         val now = clockMs()
         val request = PaymentRequest(

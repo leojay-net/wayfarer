@@ -74,7 +74,7 @@ class MerchantTerminal:
         self._accepted: set[bytes] = set()
 
     def create_request(
-        self, fiat_minor: int, *, fiat_currency: str = "NGN", fiat_exponent: int = 2, token_id: str = NATIVE_TOKEN_ID
+        self, fiat_minor: int, *, fiat_currency: str = "USD", fiat_exponent: int = 2, token_id: str = NATIVE_TOKEN_ID
     ) -> PaymentRequest:
         """Lock a rate and build the request to show to the buyer's phone."""
         quote = self._rates.lock(fiat_currency, token_id)

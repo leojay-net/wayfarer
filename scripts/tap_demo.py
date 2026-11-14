@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Two simulated phones tap in one process: price in naira, buyer confirms, signed ML-DSA-65 cheque back, merchant accepts.
+"""Two simulated phones tap in one process: price in fiat, buyer confirms, signed ML-DSA-65 cheque back, merchant accepts.
 
     python3 scripts/tap_demo.py                       # offline: no network, no keys, nothing on any chain
-    python3 scripts/tap_demo.py --naira 500 --testnet 9bda7c
+    python3 scripts/tap_demo.py --amount 3 --testnet 9bda7c
                                                       # also settle the cheque on the TESTNET vault from docs/TESTNET-PQ.md
                                                       # (needs the ML-DSA seeds in ~/.near-credentials/wayfarer-pq/)
 
 What is real: the protocol messages, the ML-DSA-65 signature, the QR-frame transfer, and (with --testnet) the on-chain
 settlement on testnet. What is SIMULATED: both phones (one process, no NFC/Bluetooth/camera), the rate (a demo
-NGN-per-NEAR you can set with --rate), the buyer's biometric confirmation (auto-yes), and the cash-out at the end
+fiat-per-NEAR you can set with --rate), the buyer's biometric confirmation (auto-yes), and the cash-out at the end
 (SandboxSwapLeg + SandboxRail: no swap, no bank, no money). Testnet NEAR has no value.
 """
 
@@ -78,14 +78,16 @@ def transfer(label: str, payload: bytes, session: bytes, lose: tuple[int, ...] =
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--naira", type=int, default=500, help="sale amount in whole naira")
-    parser.add_argument("--rate", default="5000", help="DEMO naira per NEAR")
+    parser.add_argument("--amount", type=int, default=5, help="sale amount in whole units of --currency")
+    parser.add_argument("--currency", default="USD", help="ISO 4217 code of the sale currency")
+    parser.add_argument("--rate", default="10", help="DEMO fiat units per NEAR")
+    parser.add_argument("--fiat-per-usd", default="1", help="DEMO fiat units per USD, used by the sandbox cash-out")
     parser.add_argument("--testnet", metavar="SUFFIX", help="settle on the wfpq-*-SUFFIX.testnet vault")
     parser.add_argument("--save", type=Path, help="with --testnet: write receipt.json and outcome.json to this folder")
     args = parser.parse_args()
 
     vault = f"wfpq-vault-{args.testnet}.testnet" if args.testnet else "buyer-vault.testnet"
-    shop = f"wfpq-shop-{args.testnet}.testnet" if args.testnet else "ada-shop.testnet"
+    shop = f"wfpq-shop-{args.testnet}.testnet" if args.testnet else "cafe-shop.testnet"
     buyer_key = MlDsaKeyPair.generate(vault)
     rpc = NearRpc("https://rpc.testnet.near.org")
     owner_admin = None
@@ -96,14 +98,14 @@ def main() -> int:
         key_id, tx = owner_admin.add_agent(buyer_key.public_key, expires_at_ms=clock_ms() + 3_600_000)
         print(f"Setup (testnet): owner registered a fresh buyer key {key_id[:16]}...: {EXPLORER}{tx}")
 
-    desk = RateDesk(FixedRateSource({("NGN", "near"): Decimal(args.rate)}), clock_ms)
-    merchant = MerchantTerminal(account=shop, name="Ada's Shop", rates=desk, clock_ms=clock_ms)
+    desk = RateDesk(FixedRateSource({(args.currency, "near"): Decimal(args.rate)}), clock_ms)
+    merchant = MerchantTerminal(account=shop, name="Sam's Cafe", rates=desk, clock_ms=clock_ms)
     buyer = BuyerWallet(
         vault=vault, agent_key=buyer_key, confirmer=AutoYes(), limits=TapLimits({"near": NEAR // 2}), clock_ms=clock_ms
     )
 
-    print(f"1. Merchant prices NGN {args.naira:,} at a DEMO rate of NGN {args.rate}/NEAR (60 s lock)")
-    request = merchant.create_request(args.naira * 100)
+    print(f"1. Merchant prices {args.currency} {args.amount:,} at a DEMO rate of {args.currency} {args.rate}/NEAR (60 s lock)")
+    request = merchant.create_request(args.amount * 100, fiat_currency=args.currency)
     print(
         f"   -> {request.asset_amount / NEAR:.6f} NEAR to {request.merchant_account}, request hash {request.request_hash().hex()[:16]}..."
     )
@@ -166,13 +168,13 @@ def main() -> int:
     print("7. Merchant cash-out, SANDBOX ONLY (no swap, no bank, no money)")
     with tempfile.TemporaryDirectory() as tmp:
         service = CashOutService(
-            SandboxSwapLeg(usd_per_near=Decimal(args.rate) / Decimal(1500)),  # consistent with the demo rate
-            SandboxRail(Path(tmp) / "ledger.json", ngn_per_usd=Decimal("1500")),
+            SandboxSwapLeg(usd_per_near=Decimal(args.rate) / Decimal(args.fiat_per_usd)),  # consistent with the demo rate
+            SandboxRail(Path(tmp) / "ledger.json", fiat_per_usd=Decimal(args.fiat_per_usd), currency=args.currency),
         )
         quote = service.quote(
             reference=request.intent_id()[:40],
             amount_in=accepted.cheque.amount,
-            bank=BankAccount("058", "0123456789", "Ada Okafor"),
+            bank=BankAccount("021", "0123456789", "Sam Carter"),
             refund_to=shop,
         )
         print("   " + quote.read_back())

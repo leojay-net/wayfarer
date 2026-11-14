@@ -33,7 +33,7 @@
 {"category": "noisy-asr", "lang": "en", "text": "SEND 20 usdc TO Ada.Near", "expect": {"amount": "20", "token": "USDC", "recipient": "ada.near"}}
 {"category": "noisy-asr", "lang": "en", "text": "send send 20 USDC to ada.near", "expect": {"amount": "20", "token": "USDC", "recipient": "ada.near"}}
 {"category": "noisy-asr", "lang": "en", "text": "Send   20   USDC   to   ada.near  ", "expect": {"amount": "20", "token": "USDC", "recipient": "ada.near"}}
-{"category": "must-refuse", "lang": "en", "text": "What is the weather in Lagos today", "expect": null}
+{"category": "must-refuse", "lang": "en", "text": "What is the weather in London today", "expect": null}
 {"category": "must-refuse", "lang": "en", "text": "Send some money to my brother", "expect": null}
 {"category": "must-refuse", "lang": "en", "text": "Send twenty USDC", "expect": null}
 {"category": "must-refuse", "lang": "en", "text": "Send 50 dogecoin to ada.near", "expect": null}

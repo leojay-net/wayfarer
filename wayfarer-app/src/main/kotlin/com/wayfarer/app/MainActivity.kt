@@ -161,11 +161,13 @@ class MainActivity : ComponentActivity() {
 
     // -------------------------------------------------------------------------------------------------- merchant
 
-    private fun startSale(nairaText: String) {
+    private fun currency() = setting("currency", "USD")
+
+    private fun startSale(saleText: String) {
         try {
-            val naira = BigDecimal(nairaText.trim())
-            val minor = naira.movePointRight(2).longValueExact()
-            val rate = BigDecimal(setting("rate", "5000"))
+            val amount = BigDecimal(saleText.trim())
+            val minor = amount.movePointRight(2).longValueExact()
+            val rate = BigDecimal(setting("rate", "10"))
             val term = MerchantTerminal(
                 account = setting("merchant_account", ""),
                 name = setting("merchant_name", "My shop"),
@@ -174,7 +176,7 @@ class MainActivity : ComponentActivity() {
             )
             terminal = term
             accepted = null
-            val created = term.createRequest(minor)
+            val created = term.createRequest(minor, currency())
             request = created
             MerchantCard.server.outgoing = created.message()
             MerchantCard.handler = { raw ->
@@ -190,9 +192,9 @@ class MainActivity : ComponentActivity() {
         } catch (e: TapException) {
             message = e.message ?: "Could not create the request."
         } catch (e: ArithmeticException) {
-            message = "Enter an amount in naira, at most two decimals."
+            message = "Enter an amount, at most two decimals."
         } catch (e: NumberFormatException) {
-            message = "Enter an amount in naira."
+            message = "Enter an amount."
         }
     }
 
@@ -333,13 +335,13 @@ class MainActivity : ComponentActivity() {
             Spacer(Modifier.height(30.dp))
             Box(Modifier.appear(1)) { Eyebrow("Quantum-safe tap to pay", Wf.Mint) }
             Spacer(Modifier.height(12.dp))
-            Box(Modifier.appear(2)) { T("Spend naira.\nHold NEAR.", 46, FontWeight.Light, spacing = -1.6, lineHeight = 50) }
+            Box(Modifier.appear(2)) { T("Hold NEAR.\nPay anywhere.", 46, FontWeight.Light, spacing = -1.6, lineHeight = 50) }
             Spacer(Modifier.height(26.dp))
             Box(Modifier.appear(3)) { VaultCard(setting("vault", "wfpq-vault-9bda7c.testnet"), setting("tap_limit_near", "0.5")) }
             Spacer(Modifier.height(18.dp))
             Box(Modifier.appear(4)) { RoleCard(true, "Pay", "Approve a price and settle from your vault", "Buyer") { role = "buyer"; nfc?.start() } }
             Spacer(Modifier.height(12.dp))
-            Box(Modifier.appear(5)) { RoleCard(false, "Accept payments", "Charge in naira, get a signed cheque", "Merchant") { role = "merchant"; nfc?.stop() } }
+            Box(Modifier.appear(5)) { RoleCard(false, "Accept payments", "Charge a price, get a signed cheque", "Merchant") { role = "merchant"; nfc?.stop() } }
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -384,7 +386,7 @@ class MainActivity : ComponentActivity() {
     private fun MerchantScreen() {
         var account by remember { mutableStateOf(setting("merchant_account", "")) }
         var name by remember { mutableStateOf(setting("merchant_name", "")) }
-        var rate by remember { mutableStateOf(setting("rate", "5000")) }
+        var rate by remember { mutableStateOf(setting("rate", "10")) }
         var amount by remember { mutableStateOf("") }
         var settings by remember { mutableStateOf(account.isEmpty()) }
         val req = request
@@ -405,7 +407,7 @@ class MainActivity : ComponentActivity() {
                     T("Where the money lands, and the demo exchange rate. Nothing here is a live market feed.", 14, color = Wf.Dim, lineHeight = 20)
                     Field("Your NEAR account", account, mono = true) { account = it; save("merchant_account", it) }
                     Field("Shop name", name) { name = it; save("merchant_name", it) }
-                    Field("Demo rate (naira per 1 NEAR)", rate, keyboard = KeyboardType.Decimal) { rate = it; save("rate", it) }
+                    Field("Demo rate (USD per 1 NEAR)", rate, keyboard = KeyboardType.Decimal) { rate = it; save("rate", it) }
                     T("Order agent. Optional. Your own NEAR AI Cloud key; only the order text is sent, never buyer data.", 13, color = Wf.Dim, lineHeight = 18)
                     Field("NEAR AI key", setting("nearai_key", ""), mono = true) { save("nearai_key", it) }
                 }
@@ -421,7 +423,7 @@ class MainActivity : ComponentActivity() {
                     }
                     Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Amount("₦", groupEntry(amount), 60, dim = amount.isEmpty())
+                            Amount(symbolOf(currency()), groupEntry(amount), 60, dim = amount.isEmpty())
                             Spacer(Modifier.height(10.dp))
                             T(nearHint(amount, rate), 14, color = Wf.Dim)
                         }
@@ -470,7 +472,7 @@ class MainActivity : ComponentActivity() {
                 Column {
                     MerchantAgent.DEMO_MENU.forEachIndexed { i, m ->
                         if (i > 0) Hairline()
-                        DetailRow(m.name, "₦" + groupEntry(m.priceNaira.toString()))
+                        DetailRow(m.name, symbolOf(currency()) + groupEntry(m.price.toString()))
                     }
                 }
             }
@@ -481,7 +483,7 @@ class MainActivity : ComponentActivity() {
                     Column {
                         res.lines.forEachIndexed { i, l ->
                             if (i > 0) Hairline()
-                            DetailRow("${l.quantity} x ${l.item.name}", "₦" + groupEntry(l.subtotalNaira.toString()))
+                            DetailRow("${l.quantity} x ${l.item.name}", symbolOf(currency()) + groupEntry(l.subtotal.toString()))
                         }
                         if (res.unmatched.isNotEmpty()) {
                             Spacer(Modifier.height(8.dp))
@@ -490,8 +492,8 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 if (res.ready) {
-                    Amount("₦", groupEntry(res.totalNaira.toString()), 44)
-                    PrimaryButton("Charge ₦" + groupEntry(res.totalNaira.toString())) { val t = res.totalNaira; agentResult = null; startSale(t.toString()) }
+                    Amount(symbolOf(currency()), groupEntry(res.total.toString()), 44)
+                    PrimaryButton("Charge " + symbolOf(currency()) + groupEntry(res.total.toString())) { val t = res.total; agentResult = null; startSale(t.toString()) }
                 } else {
                     T("Fix the order, or use the keypad.", 13, color = Wf.Dim)
                 }
@@ -741,7 +743,7 @@ class MainActivity : ComponentActivity() {
 
     // ---- formatting
 
-    private fun symbolOf(currency: String) = if (currency == "NGN") "₦" else currency
+    private fun symbolOf(currency: String) = when (currency) { "USD" -> "$"; "EUR" -> "€"; "GBP" -> "£"; else -> currency }
 
     private fun figureOf(r: PaymentRequest): String =
         "%,.2f".format(BigDecimal(r.fiatMinor).movePointLeft(r.fiatExponent)).let { if (it.endsWith(".00")) it.dropLast(3) else it }
@@ -772,8 +774,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun nearHint(raw: String, rate: String): String = try {
-        val naira = BigDecimal(if (raw.isEmpty() || raw == ".") "0" else raw.trimEnd('.'))
-        val near = naira.divide(BigDecimal(rate), 4, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
+        val amount = BigDecimal(if (raw.isEmpty() || raw == ".") "0" else raw.trimEnd('.'))
+        val near = amount.divide(BigDecimal(rate), 4, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
         "≈ $near NEAR at the demo rate"
     } catch (e: Exception) {
         "Enter an amount"

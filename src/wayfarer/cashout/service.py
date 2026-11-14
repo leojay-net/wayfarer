@@ -1,6 +1,6 @@
 """One-button merchant cash-out: quote and read back, then swap NEAR to USDC and pay the bank rail.
 
-The merchant sees naira; the swap is an implementation detail. Honest states: if the swap does not deliver, no payout is
+The merchant sees their own currency; the swap is an implementation detail. Honest states: if the swap does not deliver, no payout is
 made; if the swap delivered but the payout failed, the result says the USDC is held at the destination and needs follow-up.
 """
 
@@ -33,13 +33,18 @@ class CashOutQuote:
     rail: RailQuote
     bank: BankAccount
 
+    def _fx_clause(self) -> str:
+        if self.rail.currency == "USD" and self.rail.fiat_per_usd == 1:
+            return ""
+        return f" at {self.rail.currency} {self.rail.fiat_per_usd:,.2f}/USD"
+
     def read_back(self) -> str:
         near = Decimal(self.swap.amount_in) / NEAR_UNIT
         usdc_min = Decimal(self.swap.min_usdc_out) / USDC_UNIT
         return (
             f"Cash out {near:.6f} NEAR to {self.bank.account_name} ({self.bank.masked}): "
-            f"about NGN {self.rail.ngn_out:,.2f} after a NGN {self.rail.fee_ngn:,.2f} fee, based on at least "
-            f"{usdc_min:.2f} USDC at NGN {self.rail.ngn_per_usd:,.2f}/USD. This is an estimate. "
+            f"about {self.rail.currency} {self.rail.fiat_out:,.2f} after a {self.rail.currency} {self.rail.fee_fiat:,.2f} fee, based on at least "
+            f"{usdc_min:.2f} USDC{self._fx_clause()}. This is an estimate. "
             f"[{self.swap.label}; {self.rail.label}] Nothing happens until you confirm."
         )
 
@@ -86,7 +91,7 @@ class CashOutService:
         if payout.status is PayoutStatus.PAID:
             return CashOutResult(
                 CashOutStatus.PAID,
-                f"NGN {payout.ngn_amount:,.2f} paid. [{payout.rail_label}]",
+                f"{payout.currency} {payout.fiat_amount:,.2f} paid. [{payout.rail_label}]",
                 quote.reference,
                 payout,
                 swap.detail,
