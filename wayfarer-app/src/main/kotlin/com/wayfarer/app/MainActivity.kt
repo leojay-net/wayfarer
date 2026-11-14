@@ -21,12 +21,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.draw.scale
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -110,7 +117,10 @@ class MainActivity : ComponentActivity() {
         if (!debuggable) return
         try {
             role = "buyer"
-            review(PaymentRequest.decode(hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()))
+            // "auto" takes the request the merchant side of this same app just created (single-emulator demo).
+            val raw = if (hex == "auto") MerchantCard.server.outgoing ?: throw IllegalStateException("no request yet")
+            else hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+            review(PaymentRequest.decode(raw))
         } catch (e: Exception) {
             message = "Could not read the demo request."
         }
@@ -266,15 +276,37 @@ class MainActivity : ComponentActivity() {
         else -> Tone.Neutral
     }
 
+    /** Name of the screen on show; logged in debug builds so the demo recording script can wait for it. */
+    private fun screenName(): String = when (role) {
+        null -> "home"
+        "merchant" -> if (accepted != null) "merchant_accepted" else if (request != null) "merchant_request" else "merchant_keypad"
+        else -> if (sentResult?.accepted == true) "buyer_sent" else if (envelope != null) "buyer_signed" else if (incoming != null) "buyer_review" else "buyer_radar"
+    }
+
     @Composable
     private fun Screen() {
+        val name = screenName()
+        LaunchedEffect(name) {
+            if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) android.util.Log.d("WF_STATE", name)
+        }
         Page {
             Column(Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 22.dp)) {
                 Box(Modifier.weight(1f)) {
-                    when (role) {
-                        null -> HomeScreen()
-                        "merchant" -> MerchantScreen()
-                        else -> BuyerScreen()
+                    androidx.compose.animation.AnimatedContent(
+                        targetState = role to (request?.let { 1 } ?: 0) + (accepted?.let { 2 } ?: 0) + (incoming?.let { 4 } ?: 0) + (envelope?.let { 8 } ?: 0) + (sentResult?.let { 16 } ?: 0),
+                        transitionSpec = {
+                            (androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(380, 120)) +
+                                androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(480, 80, androidx.compose.animation.core.FastOutSlowInEasing)) { it / 14 } +
+                                androidx.compose.animation.scaleIn(androidx.compose.animation.core.tween(480, 80), 0.97f))
+                                .togetherWith(androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(160)))
+                        },
+                        label = "screen",
+                    ) { (r, _) ->
+                        when (r) {
+                            null -> HomeScreen()
+                            "merchant" -> MerchantScreen()
+                            else -> BuyerScreen()
+                        }
                     }
                 }
                 if (message.isNotEmpty()) {
@@ -287,44 +319,42 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun leave() { role = null; message = ""; request = null; accepted = null; incoming = null; envelope = null; sentResult = null; nfc?.stop() }
+    private fun leave() { if (role != "buyer") accepted = null; role = null; message = ""; request = null; incoming = null; envelope = null; sentResult = null; nfc?.stop() }
 
     @Composable
     private fun HomeScreen() {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), Arrangement.spacedBy(0.dp)) {
-            Spacer(Modifier.height(24.dp))
-            Wordmark()
-            Spacer(Modifier.height(56.dp))
-            Eyebrow("Quantum-safe tap to pay", Wf.Mint)
-            Spacer(Modifier.height(14.dp))
-            T("Spend naira.\nHold NEAR.", 44, FontWeight.Light, spacing = -1.4, lineHeight = 48)
-            Spacer(Modifier.height(18.dp))
-            T(
-                "Approve a naira price with your fingerprint. A bounded, post-quantum signed cheque settles from your vault on NEAR.",
-                16, color = Wf.Dim, lineHeight = 24,
-            )
-            Spacer(Modifier.height(40.dp))
-            RoleCard("Pay", "Approve a price and settle from your vault", "Buyer") { role = "buyer"; nfc?.start() }
+            Spacer(Modifier.height(20.dp))
+            Box(Modifier.appear(0)) { Wordmark() }
+            Spacer(Modifier.height(30.dp))
+            Box(Modifier.appear(1)) { Eyebrow("Quantum-safe tap to pay", Wf.Mint) }
             Spacer(Modifier.height(12.dp))
-            RoleCard("Accept payments", "Charge in naira, get a signed cheque", "Merchant") { role = "merchant"; nfc?.stop() }
+            Box(Modifier.appear(2)) { T("Spend naira.\nHold NEAR.", 46, FontWeight.Light, spacing = -1.6, lineHeight = 50) }
+            Spacer(Modifier.height(26.dp))
+            Box(Modifier.appear(3)) { VaultCard(setting("vault", "wfpq-vault-9bda7c.testnet"), setting("tap_limit_near", "0.5")) }
+            Spacer(Modifier.height(18.dp))
+            Box(Modifier.appear(4)) { RoleCard(true, "Pay", "Approve a price and settle from your vault", "Buyer") { role = "buyer"; nfc?.start() } }
+            Spacer(Modifier.height(12.dp))
+            Box(Modifier.appear(5)) { RoleCard(false, "Accept payments", "Charge in naira, get a signed cheque", "Merchant") { role = "merchant"; nfc?.stop() } }
             Spacer(Modifier.height(24.dp))
         }
     }
 
     @Composable
-    private fun RoleCard(title: String, subtitle: String, tag: String, onClick: () -> Unit) {
+    private fun RoleCard(buyer: Boolean, title: String, subtitle: String, tag: String, onClick: () -> Unit) {
         val source = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-        Card(
-            Modifier.androidxClickable(source, onClick),
-            pad = 22.dp,
-        ) {
-            Eyebrow(tag)
-            Spacer(Modifier.height(10.dp))
+        val pressed by source.collectIsPressedAsState()
+        val sc by animateFloatAsState(if (pressed) 0.97f else 1f, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium), label = "role")
+        Card(Modifier.scale(sc).androidxClickable(source, onClick), pad = 18.dp) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                IconTile { RoleIcon(buyer) }
+                Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
-                    T(title, 24, FontWeight.Medium, spacing = -0.5)
+                    Eyebrow(tag)
                     Spacer(Modifier.height(4.dp))
-                    T(subtitle, 14, color = Wf.Dim)
+                    T(title, 21, FontWeight.Medium, spacing = -0.4)
+                    Spacer(Modifier.height(2.dp))
+                    T(subtitle, 13, color = Wf.Dim, lineHeight = 18)
                 }
                 Chevron()
             }
@@ -435,7 +465,7 @@ class MainActivity : ComponentActivity() {
             Spacer(Modifier.height(10.dp))
             Pill("Pending settlement", Tone.Warn)
             Spacer(Modifier.height(24.dp))
-            Card(pad = 8.dp) {
+            Card(Modifier.appear(2), pad = 8.dp) {
                 Column(Modifier.padding(horizontal = 12.dp)) {
                     DetailRow("Amount", figureWithSymbol(a.request))
                     Hairline()
@@ -535,7 +565,7 @@ class MainActivity : ComponentActivity() {
                 Spacer(Modifier.height(10.dp))
                 T("= " + nearText(r), 17, color = Wf.Dim)
                 Spacer(Modifier.height(28.dp))
-                Card(pad = 8.dp) {
+                Card(Modifier.appear(2), pad = 8.dp) {
                     Column(Modifier.padding(horizontal = 12.dp)) {
                         DetailRow("To", r.merchantAccount, mono = true)
                         Hairline()
@@ -566,6 +596,15 @@ class MainActivity : ComponentActivity() {
             Frames(frames) { img, i -> QrCard(img, if (frames.size > 1) "Frame ${i + 1} of ${frames.size}. Keep it in view until the merchant has scanned all." else "Merchant: scan this.") }
             Spacer(Modifier.height(18.dp))
             T("Hold the phones together again to send it by tap, or let the merchant scan the code.", 14, color = Wf.Dim, align = TextAlign.Center, lineHeight = 20)
+            if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+                Spacer(Modifier.height(18.dp))
+                SecondaryButton("Emulator only: deliver to merchant") {
+                    // Same handler the NFC path calls, so the merchant still verifies the real ML-DSA-65 signature.
+                    val result = MerchantCard.handler(env.encode())
+                    sentResult = result
+                    message = if (result.accepted) "" else "Refused: ${result.text}"
+                }
+            }
             Spacer(Modifier.height(14.dp))
         }
     }

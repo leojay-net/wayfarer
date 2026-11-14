@@ -94,6 +94,6 @@ Measured on 13 Nov 2026 on the author's computer: Python 215 tests, Kotlin 18 te
 | `verifier/` | Static receipt verifier (own Keccak + ML-DSA verify in JS) and Node tests |
 | `wayfarer-tap/` | Kotlin (JVM) protocol core + NFC APDU state machine; tests read `tests/vectors/` |
 | `wayfarer-app/` | Android app (Compose) built on `wayfarer-tap` |
-| `docs/` | `TWO-PHONE-TEST.md` (how to run the real tap; not done yet), `PLAN-TAP.md`, `SPIKES.md` (incl. plan changes and failures), `TESTNET-PQ.md`, `VAULT.md`, `CASHOUT.md`, `INTENTS.md`, `DEMO-SCRIPT.md` |
+| `docs/` | `TWO-PHONE-TEST.md` (how to run the real tap; not done yet), `PLAN-TAP.md`, `SPIKES.md` (incl. plan changes and failures), `TESTNET-PQ.md`, `VAULT.md`, `CASHOUT.md`, `INTENTS.md` |
 
 Licence: MIT, see `LICENSE`.
