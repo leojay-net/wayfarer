@@ -54,6 +54,7 @@ import com.wayfarer.tap.CommitResult
 import com.wayfarer.tap.FrameAssembler
 import com.wayfarer.tap.MerchantTerminal
 import com.wayfarer.tap.PaymentRequest
+import com.wayfarer.tap.PricedOrder
 import com.wayfarer.tap.SeedSigner
 import com.wayfarer.tap.TapException
 import com.wayfarer.tap.encodeFrames
@@ -80,6 +81,9 @@ class MainActivity : ComponentActivity() {
     private var request by mutableStateOf<PaymentRequest?>(null)
     private var accepted by mutableStateOf<AcceptedCheque?>(null)
     private val chequeAssembler = FrameAssembler()
+    private var agentMode by mutableStateOf(false)
+    private var agentBusy by mutableStateOf(false)
+    private var agentResult by mutableStateOf<PricedOrder?>(null)
 
     // Buyer
     private var incoming by mutableStateOf<PaymentRequest?>(null)
@@ -279,7 +283,7 @@ class MainActivity : ComponentActivity() {
     /** Name of the screen on show; logged in debug builds so the demo recording script can wait for it. */
     private fun screenName(): String = when (role) {
         null -> "home"
-        "merchant" -> if (accepted != null) "merchant_accepted" else if (request != null) "merchant_request" else "merchant_keypad"
+        "merchant" -> if (accepted != null) "merchant_accepted" else if (request != null) "merchant_request" else if (agentMode) "merchant_agent" else "merchant_keypad"
         else -> if (sentResult?.accepted == true) "buyer_sent" else if (envelope != null) "buyer_signed" else if (incoming != null) "buyer_review" else "buyer_radar"
     }
 
@@ -319,7 +323,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun leave() { if (role != "buyer") accepted = null; role = null; message = ""; request = null; incoming = null; envelope = null; sentResult = null; nfc?.stop() }
+    private fun leave() { agentMode = false; agentResult = null; agentBusy = false; if (role != "buyer") accepted = null; role = null; message = ""; request = null; incoming = null; envelope = null; sentResult = null; nfc?.stop() }
 
     @Composable
     private fun HomeScreen() {
@@ -402,9 +406,16 @@ class MainActivity : ComponentActivity() {
                     Field("Your NEAR account", account, mono = true) { account = it; save("merchant_account", it) }
                     Field("Shop name", name) { name = it; save("merchant_name", it) }
                     Field("Demo rate (naira per 1 NEAR)", rate, keyboard = KeyboardType.Decimal) { rate = it; save("rate", it) }
+                    T("Order agent. Optional. Your own NEAR AI Cloud key; only the order text is sent, never buyer data.", 13, color = Wf.Dim, lineHeight = 18)
+                    Field("NEAR AI key", setting("nearai_key", ""), mono = true) { save("nearai_key", it) }
+                }
+                agentMode -> Column(Modifier.weight(1f)) {
+                    ModeToggle()
+                    AgentPanel()
                 }
                 else -> Column(Modifier.weight(1f)) {
                     Spacer(Modifier.height(4.dp))
+                    ModeToggle()
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
                         Pill(name.ifEmpty { "Your shop" }, Tone.Neutral)
                     }
@@ -421,6 +432,71 @@ class MainActivity : ComponentActivity() {
                     Spacer(Modifier.height(14.dp))
                 }
             }
+        }
+    }
+
+    @Composable
+    private fun ModeToggle() {
+        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            TextAction("Keypad", if (!agentMode) Wf.Mint else Wf.Dim) { agentMode = false }
+            Spacer(Modifier.width(26.dp))
+            TextAction("Order agent", if (agentMode) Wf.Mint else Wf.Dim) { agentMode = true }
+        }
+    }
+
+    private fun runAgent(order: String) {
+        agentBusy = true; agentResult = null; message = ""
+        val key = setting("nearai_key", "")
+        Thread {
+            try {
+                val r = MerchantAgent.price(order, MerchantAgent.DEMO_MENU, key)
+                runOnUiThread { agentResult = r; agentBusy = false }
+            } catch (e: MerchantAgent.AgentException) {
+                runOnUiThread { message = e.message ?: "The agent could not price that order."; agentBusy = false }
+            } catch (e: Exception) {
+                runOnUiThread { message = "The agent could not price that order."; agentBusy = false }
+            }
+        }.start()
+    }
+
+    @Composable
+    private fun androidx.compose.foundation.layout.ColumnScope.AgentPanel() {
+        var order by remember { mutableStateOf("") }
+        val res = agentResult
+        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), Arrangement.spacedBy(14.dp)) {
+            T("Say what they want", 26, FontWeight.Light, spacing = -0.6)
+            T("The agent picks items from your menu. Prices always come from the menu, never from the agent.", 13, color = Wf.Dim, lineHeight = 18)
+            Card(Modifier.appear(1), pad = 14.dp) {
+                Column {
+                    MerchantAgent.DEMO_MENU.forEachIndexed { i, m ->
+                        if (i > 0) Hairline()
+                        DetailRow(m.name, "₦" + groupEntry(m.priceNaira.toString()))
+                    }
+                }
+            }
+            Field("Order", order) { order = it; agentResult = null }
+            PrimaryButton(if (agentBusy) "Reading the order..." else "Price the order", enabled = order.isNotBlank() && !agentBusy) { runAgent(order) }
+            if (res != null) {
+                Card(Modifier.appear(2), pad = 14.dp) {
+                    Column {
+                        res.lines.forEachIndexed { i, l ->
+                            if (i > 0) Hairline()
+                            DetailRow("${l.quantity} x ${l.item.name}", "₦" + groupEntry(l.subtotalNaira.toString()))
+                        }
+                        if (res.unmatched.isNotEmpty()) {
+                            Spacer(Modifier.height(8.dp))
+                            Pill("Not on the menu: " + res.unmatched.joinToString(", "), Tone.Bad)
+                        }
+                    }
+                }
+                if (res.ready) {
+                    Amount("₦", groupEntry(res.totalNaira.toString()), 44)
+                    PrimaryButton("Charge ₦" + groupEntry(res.totalNaira.toString())) { val t = res.totalNaira; agentResult = null; startSale(t.toString()) }
+                } else {
+                    T("Fix the order, or use the keypad.", 13, color = Wf.Dim)
+                }
+            }
+            Spacer(Modifier.height(10.dp))
         }
     }
 

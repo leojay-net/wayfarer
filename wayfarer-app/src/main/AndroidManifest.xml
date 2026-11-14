@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.NFC" />
+    <!-- Only the merchant's optional order agent uses the network (order text to NEAR AI Cloud). -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <!-- NFC is optional: the QR path works on phones without it. -->
     <uses-feature android:name="android.hardware.nfc" android:required="false" />
